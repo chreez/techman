@@ -1,0 +1,9 @@
+- type: ALWAYS
+  name: Test New Features
+  note: Write unit or integration tests for all new code.
+- type: ALWAYS
+  name: Enforce CI Tests
+  note: Ensure test suites run in continuous integration.
+- type: NEVER
+  name: Bypass Tests
+  note: Do not merge code without passing tests.

@@ -1,0 +1,9 @@
+- type: ALWAYS
+  name: Modular Design
+  note: Separate concerns and keep components small.
+- type: ALWAYS
+  name: Document Decisions
+  note: Capture important architectural choices in docs.
+- type: NEVER
+  name: Unvetted Dependencies
+  note: Avoid adding major libraries without review.
