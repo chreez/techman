@@ -110,48 +110,37 @@ BOOTSTRAP-HALT: true
 
 1. **What are you trying to complete in this project?**
 
-    * [ ] Build a new software system
-    * [ ] Migrate or modernize legacy code
-    * [ ] Refactor or optimize an existing project
-    * [ ] Write documentation or technical content
-    * [ ] Analyze or evaluate an existing system
-    * [ ] Custom: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
+    * [ x ] Build a new web app that's focussed on mobile first. 
+    * [ x ] I want to use modern web standards
+    * [ x ] Minimalist web standards with user experience as the core tonant.
 
 2. **Which area will $AGENT be most active in?**
 
-    * [ ] Coding
-    * [ ] Testing
-    * [ ] Architecture
-    * [ ] Deployment
-    * [ ] Docs
-    * [ ] Custom: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
+    * [ x ] Coding
+    * [ x ] Testing
+    * [ x ] Architecture
 
 3. **Open Ended - What is your goal?**
-    > $AGENT: Feel free to use `$USER_INPUT` as additional context here
-    * "OPEN ENDED"
+    * [ x ] A simple web app that is focussed around Austin, TX events and things to do.
+    * [ x ] Eventually the application should take in a criteria from the user and an LLM should determine 
+      * Places that are currently open that match that criteria. 
+      * [ x ] The website should expose a prompt driven workflow to determine what food place the user should eat at.
+    * 
 
 4. **Where does this project primarily run or operate?**
-    * [ ] Web (browser-based)
-    * [ ] Server / backend services
-    * [ ] AWS / cloud-native
-    * [ ] On-prem / embedded
-    * [ ] Custom: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
+    * [ x ] Web (browser-based)
+    * [ x ] Server / backend services
+      * Can consider backend architecture at a later point.
+      * Plugging in OAUTH access to things like chat gpt for prompt workflow.
 
 5. **How should Codex behave in ambiguous situations?**
-
-    * [ ] Ask before taking action
-    * [ ] Use conservative/default behavior
-    * [ ] Follow best practice automatically
-    * [ ] Custom: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_
+    * [ x ] Ask before taking action
+      * Lets start with codex always asking one clarifying question to ensure correct experience
 
 6. **Confirm proposed categories before generation.**
-
    > Codex will summarize up to 5 inferred categories and ask:
-   > *"Codex will generate these categories: `- coding`, `- testing`, `- deployment`, `- docs`. Proceed?"*
+   > Codex: Generate categories based on this responses. 
 
-    * [ ] Yes, generate these categories
-    * [ ] No, revise first
-    * [ ] Edit category list manually: \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ 
 7. **Open Ended - Anything else you'd like to add?**
     
     > $AGENT: loop this until user says "no"
@@ -168,6 +157,7 @@ BOOTSTRAP-HALT: true
 - $AGENT: Always create a `project.context.yaml` 
   - containing project goals, current or otherwise
   - containing details of the project
+  - enhance this context based on your best judgement
 - $AGENT: Always create an `agent-role.context.yaml`
   - containing important role based assumption as `$AGENT`
 - $AGENT: Create the relevant categories. 
