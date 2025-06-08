@@ -38,7 +38,7 @@ cat .agentic/*
 
 ---
 
-## 🗂 Rule Category Creation (`./agentic/category.yaml`)
+## 🗂 Rule Category Creation (`./agentic/${category}.yaml`)
 
 > 🗂 Categories are only `$AGENT` generated in bootstrap process unless `$USER` explicitly asks to create 
 > a new ruleset category.
@@ -100,7 +100,7 @@ BOOTSTRAP-HALT: true
 ```
 
 > 🟡 **Start Bootstrap Process**
-> Codex must **pause** all actions and resolve this prompt before proceeding.
+> Codex must prompt the user of the following before proceeding.
 > Goal: define up to **5 initial categories**.
 > 🗑️ Delete this section once `.agentic/category.yaml` and `.context.md` files are generated.
 
