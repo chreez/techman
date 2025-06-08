@@ -1,22 +1,12 @@
-# techman
+# Web App
 
-This repository contains the Austin Events web app.
+This directory contains the React frontend built with Vite.
+The project uses Tailwind CSS with the DaisyUI plugin.
 
-## Web Application
-
-The `web` directory hosts the React application built with Vite, Tailwind CSS and DaisyUI.
-
-### Scripts
+Run the following commands from this folder:
 
 ```bash
-# install dependencies
-npm install
-
-# start development server
-npm run dev
-
-# build for production
-npm run build
+npm install       # install dependencies
+npm run dev       # start local dev server
+npm run build     # build for production
 ```
-
-Navigate to the `web` directory before running these commands.
