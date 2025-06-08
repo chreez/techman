@@ -1,0 +1,5 @@
+name: Austin Events Web App
+summary: Mobile-first web application highlighting Austin, TX events and dining options.
+details: |
+  The goal is to build a minimalist web app using modern standards. It should run in the browser and have backend services. Eventually the site will allow users to provide criteria and use an LLM to suggest currently-open venues that match.
+  Deployment targets both web and backend services. The project emphasizes clean, reusable TypeScript code and a prompt-driven user experience.

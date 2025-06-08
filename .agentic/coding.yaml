@@ -1,0 +1,9 @@
+- type: ALWAYS
+  name: Use TypeScript Strict Mode
+  note: All source code should be written in TypeScript with strict settings.
+- type: ALWAYS
+  name: Comment Complex Logic
+  note: Provide explanations for non-obvious code sections.
+- type: NEVER
+  name: Commit Secrets
+  note: Do not commit credentials or private keys.

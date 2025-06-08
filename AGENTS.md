@@ -43,15 +43,6 @@ cat .agentic/*
 > 🗂 Categories are only `$AGENT` generated in bootstrap process unless `$USER` explicitly asks to create 
 > a new ruleset category.
 
-### ✅ Example Categories
-
-* `coding.context.md`
-* `docs.context.md`
-* `deployment.context.md`$AGENT: 🟡 Remove after bootstrap (cleanup document)
-* `testing.context.md`$AGENT: 🟡 Remove after bootstrap (cleanup document)
-* `architecture.context.md` $AGENT: 🟡 Remove after bootstrap (cleanup document)
-* `safety.context.md`$AGENT: 🟡 Remove after bootstrap (cleanup document)
-
 ## 📐 Ruleset Format
 
 ```yaml
@@ -77,7 +68,6 @@ cat .agentic/*
 
 * Always summarize loaded context before any action.
 * Never search for additional `ADMIN.md` files.
-* Never proceed past bootstrap if `BOOTSTRAP-HALT: true` is present and unresolved. (remove after bootstrapping)
 
 ---
 
@@ -93,74 +83,3 @@ On prompt start, read all files in the `.agentic/` directory:
 
 ---
 
-## 🚧 Bootstrap Prompt (delete after initialization complete)
-
-```
-BOOTSTRAP-HALT: true
-```
-
-> 🟡 **Start Bootstrap Process**
-> Codex must prompt the user of the following before proceeding.
-> Goal: define up to **5 initial categories**.
-> 🗑️ Delete this section once `.agentic/category.yaml` and `.context.md` files are generated.
-
----
-
-### 🔧 Initialization Questions
-
-1. **What are you trying to complete in this project?**
-
-    * [ x ] Build a new web app that's focussed on mobile first. 
-    * [ x ] I want to use modern web standards
-    * [ x ] Minimalist web standards with user experience as the core tonant.
-
-2. **Which area will $AGENT be most active in?**
-
-    * [ x ] Coding
-    * [ x ] Testing
-    * [ x ] Architecture
-
-3. **Open Ended - What is your goal?**
-    * [ x ] A simple web app that is focussed around Austin, TX events and things to do.
-    * [ x ] Eventually the application should take in a criteria from the user and an LLM should determine 
-      * Places that are currently open that match that criteria. 
-      * [ x ] The website should expose a prompt driven workflow to determine what food place the user should eat at.
-    * 
-
-4. **Where does this project primarily run or operate?**
-    * [ x ] Web (browser-based)
-    * [ x ] Server / backend services
-      * Can consider backend architecture at a later point.
-      * Plugging in OAUTH access to things like chat gpt for prompt workflow.
-
-5. **How should Codex behave in ambiguous situations?**
-    * [ x ] Ask before taking action
-      * Lets start with codex always asking one clarifying question to ensure correct experience
-
-6. **Confirm proposed categories before generation.**
-   > Codex will summarize up to 5 inferred categories and ask:
-   > Codex: Generate categories based on this responses. 
-
-7. **Open Ended - Anything else you'd like to add?**
-    
-    > $AGENT: loop this until user says "no"
-   
-    **Example for $USER:**
-    > Always define types..
-    > Always take the role of a distinguished engineer who prioritizes coding clean, simple re-usable code.
-    > Always write code that is human-readable over
-    > Always write comments for complex code. 
-    
-   
-
-### 🔧 Bootstrap prompts complete
-- $AGENT: Always create a `project.context.yaml` 
-  - containing project goals, current or otherwise
-  - containing details of the project
-  - enhance this context based on your best judgement
-- $AGENT: Always create an `agent-role.context.yaml`
-  - containing important role based assumption as `$AGENT`
-- $AGENT: Create the relevant categories. 
-- $AGENT: Create the starter rulesets in each category.
-- $AGENT: Delete the bootstrap section.
-- $AGENT: Stop processing.
