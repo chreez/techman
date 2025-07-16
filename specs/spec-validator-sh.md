@@ -1,16 +1,16 @@
 ---
 
 id: spec-validator-bash
-version: 0.4.4
+version: 0.5.0
 title: Spec Validator CLI (Bash)
 status: draft
 entry_points:
-  • bin/spec-validator
-  • scripts/spec-validate.sh
-  • run via: ./bin/spec-validator path/to/spec.md
+  - bin/spec-validator
+  - scripts/spec-validate.sh  
+  - run via: ./bin/spec-validator path/to/spec.md
 
 description: >
-Defines a Bash-based CLI tool that validates a spec file against the core spec-validator logic. Designed for lightweight execution using Claude or OpenAI APIs and basic shell utilities.
+  Defines a Bash-based CLI tool that validates a spec file against the core spec-validator logic. Designed for lightweight execution using Claude or OpenAI APIs and basic shell utilities.
 
 ---
 
@@ -19,21 +19,23 @@ Defines a Bash-based CLI tool that validates a spec file against the core spec-v
 Enable fast, local spec validation through a CLI wrapper that leverages remote LLMs and shell parsing. Supports Markdown spec files and produces structured validation output for downstream agents.
 
 ## ⚙️ Functionality
-  • Accepts .md (with frontmatter) and .yaml spec files
-  • Detects and uses one of:
-  • OPENAI_API_KEY
-  • ANTHROPIC_API_KEY
-  • Sends content + spec-validator.md to LLM
-  • Receives structured PASS | WARN | FAIL + recommendations (JSON)
-  • Optionally saves to disk or pipes to next tool
-  • Accepts git diff (via stdin or file) to focus validation scope
-  • ⚠️ Only applies validation to diff content within recognized spec files
-  • Uses local context:
-  • The spec file itself
-  • Git diff (optional)
-  • promptTemplate-GPT.sh as system instruction
-  • Hardcoded reference spec: ./techman/specs/spec-validator.md
-  • Returns metadata including model_used in output
+  - Accepts .md (with frontmatter) and .yaml spec files
+  - Detects and uses one of:
+    - OPENAI_API_KEY
+    - ANTHROPIC_API_KEY
+  - Sends content + spec-validator.md to LLM
+  - Receives structured PASS | WARN | FAIL + recommendations (JSON)
+  - Handles LLM responses that may include markdown code blocks
+  - Optionally saves to disk or pipes to next tool
+  - Accepts git diff (via stdin or file) to focus validation scope
+  - ⚠️ Only applies validation to diff content within recognized spec files
+  - Uses local context:
+    - The spec file itself
+    - Git diff (optional)
+    - promptTemplate-GPT.sh as system instruction
+    - Hardcoded reference spec: ../specs/spec-validator.md (relative to script location)
+  - Returns metadata including model_used in output
+  - Gracefully handles API-model mismatches (e.g., Claude models with OpenAI API)
 
 ## ✅ Success Criteria
   • CLI runs without error given valid API key and input file
@@ -130,12 +132,34 @@ or with diff input:
 git diff HEAD^ HEAD -- specs/ | ./bin/spec-validator --diff -
 ```
 
+## 🛠️ Implementation Notes
+
+### JSON Escaping in Shell
+- Use temporary files with heredocs for complex JSON payloads
+- Escape prompt content using `jq -Rs .` to handle newlines and special characters
+- Avoid inline JSON strings with shell variable interpolation
+
+### API Response Handling  
+- Strip markdown code blocks (```json) from LLM responses before parsing
+- Use sed or similar to clean: `sed -e 's/^```json//' -e 's/^```//' -e 's/```$//'`
+- Provide fallback JSON structure for parse failures
+
+### Model Selection
+- Check API type before attempting model calls
+- Skip Claude models when using OpenAI API key and vice versa
+- Continue to next model in preference list on failure
+
+### Path Resolution
+- Use `$(dirname "$0")/../specs/` for relative path resolution
+- Ensures spec validator finds reference files regardless of working directory
+
 ## 🔁 Changelog
-  • 0.4.4 — Added model_used metadata to outputs; defined preferred LLMs based on real-time evaluation research; standardized bin directory usage
-  • 0.4.3 — Canonicalized bin/ as primary executable directory; updated usage examples
-  • 0.4.2 — Introduced clarifying questions output; added error boundary classification for agentic vs human-resolvable issues
-  • 0.4.1 — Clarified that diff input must only include spec file changes; stricter filtering of input scope
-  • 0.4.0 — Added support for hardcoded reference context and promptTemplate; CLI acts as GPT-facing shim
-  • 0.3.0 — Defined output format with error levels, clarified FAIL vs WARN intent
-  • 0.2.0 — Added support for git diff input and agent usability requirement
-  • 0.1.0 — Initial draft
+  - 0.5.0 — Added implementation guidance for JSON escaping, markdown stripping, API-model compatibility, and relative path resolution
+  - 0.4.4 — Added model_used metadata to outputs; defined preferred LLMs based on real-time evaluation research; standardized bin directory usage
+  - 0.4.3 — Canonicalized bin/ as primary executable directory; updated usage examples
+  - 0.4.2 — Introduced clarifying questions output; added error boundary classification for agentic vs human-resolvable issues
+  - 0.4.1 — Clarified that diff input must only include spec file changes; stricter filtering of input scope
+  - 0.4.0 — Added support for hardcoded reference context and promptTemplate; CLI acts as GPT-facing shim
+  - 0.3.0 — Defined output format with error levels, clarified FAIL vs WARN intent
+  - 0.2.0 — Added support for git diff input and agent usability requirement
+  - 0.1.0 — Initial draft

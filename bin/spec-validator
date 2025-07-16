@@ -1,3 +1,325 @@
 #!/usr/bin/env bash
-DIR="$(cd "$(dirname "$0")/.." && pwd)"
-exec "$DIR/scripts/spec-validate.sh" "$@"
+
+set -euo pipefail
+
+# Color codes for output
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+# Default values
+JSON_OUTPUT=false
+DIFF_MODE=false
+DIFF_FILE=""
+MODEL_PREFERENCE=("claude-3-5-sonnet-20241022" "gpt-4o-2024-08-06" "gpt-4-turbo-2024-04-09")
+
+# Usage function
+usage() {
+    cat << EOF
+Usage: $0 [OPTIONS] <spec_file>
+
+Validates a spec file against the core spec-validator logic using Claude or OpenAI APIs.
+
+OPTIONS:
+    --json          Output results in JSON format
+    --diff <file>   Validate only the diff content (use '-' for stdin)
+    -h, --help      Show this help message
+
+REQUIRED:
+    Either ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable must be set.
+
+EXAMPLES:
+    $0 specs/example.md
+    $0 --json specs/example.md > result.json
+    git diff --cached specs/ | $0 --diff - > result.json
+EOF
+    exit 1
+}
+
+# Error handling
+error() {
+    echo -e "${RED}Error: $1${NC}" >&2
+    exit 1
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --json)
+            JSON_OUTPUT=true
+            shift
+            ;;
+        --diff)
+            DIFF_MODE=true
+            DIFF_FILE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -*)
+            error "Unknown option: $1"
+            ;;
+        *)
+            SPEC_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
+# Validate required inputs
+if [[ -z "${SPEC_FILE:-}" ]] && [[ "$DIFF_MODE" != true ]]; then
+    error "Spec file path is required"
+fi
+
+if [[ "$DIFF_MODE" == true ]] && [[ -z "$DIFF_FILE" ]]; then
+    error "Diff file required when using --diff mode"
+fi
+
+# Check for API keys
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    API_TYPE="anthropic"
+    API_KEY="$ANTHROPIC_API_KEY"
+elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
+    API_TYPE="openai"
+    API_KEY="$OPENAI_API_KEY"
+else
+    error "Either ANTHROPIC_API_KEY or OPENAI_API_KEY must be set"
+fi
+
+# Read the spec content
+if [[ "$DIFF_MODE" == true ]]; then
+    if [[ "$DIFF_FILE" == "-" ]]; then
+        DIFF_CONTENT=$(cat)
+    else
+        DIFF_CONTENT=$(cat "$DIFF_FILE")
+    fi
+    
+    # Extract spec file paths from diff
+    SPEC_FILES=$(echo "$DIFF_CONTENT" | grep -E '^(diff --git|---|\+\+\+)' | grep -E '\.(md|yaml|yml)' | sed -E 's/^(diff --git a\/|---|\\+\\+\\+\s+[ab]\/)//g' | sort -u)
+    
+    if [[ -z "$SPEC_FILES" ]]; then
+        error "No spec files found in diff"
+    fi
+    
+    # For now, just process the diff content as the spec content
+    SPEC_CONTENT="$DIFF_CONTENT"
+else
+    if [[ ! -f "$SPEC_FILE" ]]; then
+        error "Spec file not found: $SPEC_FILE"
+    fi
+    SPEC_CONTENT=$(cat "$SPEC_FILE")
+fi
+
+# Read the reference spec validator spec
+SPEC_VALIDATOR_SPEC=$(cat "$(dirname "$0")/../specs/spec-validator.md")
+
+# Read the prompt template
+PROMPT_TEMPLATE=$(cat "$(dirname "$0")/../scripts/promptTemplate-GPT.sh")
+
+# Create a temporary file for the request
+TEMP_DIR=$(mktemp -d)
+trap "rm -rf $TEMP_DIR" EXIT
+
+# Prepare the full prompt
+FULL_PROMPT="$PROMPT_TEMPLATE
+
+Reference Spec Validator Specification:
+$SPEC_VALIDATOR_SPEC
+
+Spec to validate:
+$SPEC_CONTENT"
+
+# Function to call OpenAI API
+call_openai() {
+    local model="$1"
+    
+    # Debug: show request file location
+    if [[ -n "${DEBUG:-}" ]]; then
+        echo "Debug: Creating request at $TEMP_DIR/request.json" >&2
+    fi
+    
+    # Create the request JSON
+    cat > "$TEMP_DIR/request.json" <<EOF
+{
+  "model": "$model",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a Spec Validator. Always respond with valid JSON."
+    },
+    {
+      "role": "user",
+      "content": $(echo "$FULL_PROMPT" | jq -Rs .)
+    }
+  ],
+  "temperature": 0.1
+}
+EOF
+    
+    # Debug: check if file was created
+    if [[ -n "${DEBUG:-}" ]]; then
+        echo "Debug: Request file size: $(wc -c < "$TEMP_DIR/request.json") bytes" >&2
+        echo "Debug: First 200 chars of request: $(head -c 200 "$TEMP_DIR/request.json")" >&2
+    fi
+    
+    local response=$(curl -s -X POST https://api.openai.com/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $API_KEY" \
+        -d @"$TEMP_DIR/request.json")
+    
+    # Debug output
+    if [[ -n "${DEBUG:-}" ]]; then
+        echo "Debug: API Response: $response" >&2
+    fi
+    
+    # Check for errors
+    if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
+        if [[ -n "${DEBUG:-}" ]]; then
+            echo "Debug: API Error: $(echo "$response" | jq -r '.error')" >&2
+        fi
+        return 1
+    fi
+    
+    # Extract the content
+    local content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+    if [[ -z "$content" ]]; then
+        if [[ -n "${DEBUG:-}" ]]; then
+            echo "Debug: No content in response" >&2
+        fi
+        return 1
+    fi
+    echo "$content"
+}
+
+# Function to call Anthropic API
+call_anthropic() {
+    local model="$1"
+    
+    # Create the request JSON
+    cat > "$TEMP_DIR/request.json" <<EOF
+{
+  "model": "$model",
+  "max_tokens": 4096,
+  "messages": [
+    {
+      "role": "user",
+      "content": $(echo "$FULL_PROMPT" | jq -Rs .)
+    }
+  ]
+}
+EOF
+    
+    local response=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+        -H "Content-Type: application/json" \
+        -H "x-api-key: $API_KEY" \
+        -H "anthropic-version: 2023-06-01" \
+        -d @"$TEMP_DIR/request.json")
+    
+    # Check for errors
+    if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    # Extract the content
+    echo "$response" | jq -r '.content[0].text // empty'
+}
+
+# Try models in preference order
+RESULT=""
+MODEL_USED=""
+
+for model in "${MODEL_PREFERENCE[@]}"; do
+    if [[ "$API_TYPE" == "anthropic" ]] && [[ "$model" == claude* ]]; then
+        if RESULT=$(call_anthropic "$model" 2>/dev/null); then
+            MODEL_USED="$model"
+            break
+        fi
+    elif [[ "$API_TYPE" == "openai" ]] && [[ "$model" == gpt* ]]; then
+        RESULT=$(call_openai "$model" 2>/dev/null)
+        if [[ -n "$RESULT" ]]; then
+            MODEL_USED="$model"
+            break
+        fi
+    fi
+done
+
+if [[ -z "$RESULT" ]]; then
+    error "Failed to get response from API"
+fi
+
+# Parse the JSON result
+# Remove markdown code blocks if present
+CLEAN_RESULT=$(echo "$RESULT" | sed -e 's/^```json//' -e 's/^```//' -e 's/```$//')
+PARSED_RESULT=$(echo "$CLEAN_RESULT" | jq -c '.' 2>/dev/null || echo '{"status":"FAIL","model_used":"unknown","summary":{"pass":0,"warn":0,"fail":1},"failures":[{"line":0,"message":"Failed to parse API response"}],"warnings":[],"suggestions":[],"clarifying_questions":[]}')
+
+# Add model_used if not present
+if ! echo "$PARSED_RESULT" | jq -e '.model_used' >/dev/null 2>&1; then
+    PARSED_RESULT=$(echo "$PARSED_RESULT" | jq --arg model "$MODEL_USED" '. + {model_used: $model}')
+fi
+
+# Output results
+if [[ "$JSON_OUTPUT" == true ]]; then
+    echo "$PARSED_RESULT" | jq '.'
+else
+    # Human-readable output
+    STATUS=$(echo "$PARSED_RESULT" | jq -r '.status')
+    MODEL=$(echo "$PARSED_RESULT" | jq -r '.model_used')
+    PASS_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.pass // 0')
+    WARN_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.warn // 0')
+    FAIL_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.fail // 0')
+    
+    echo -e "[VALIDATION] ${SPEC_FILE:-diff}"
+    echo -e "Status: $STATUS"
+    echo -e "Model Used: $MODEL"
+    echo
+    
+    # Failures
+    if [[ $(echo "$PARSED_RESULT" | jq -r '.failures | length') -gt 0 ]]; then
+        echo -e "${RED}Failures (requires human review):${NC}"
+        echo "$PARSED_RESULT" | jq -r '.failures[] | "- Line \(.line): \(.message)"'
+        echo
+    fi
+    
+    # Warnings
+    if [[ $(echo "$PARSED_RESULT" | jq -r '.warnings | length') -gt 0 ]]; then
+        echo -e "${YELLOW}Warnings (agent-fixable):${NC}"
+        echo "$PARSED_RESULT" | jq -r '.warnings[] | "- Line \(.line): \(.message)"'
+        echo
+    fi
+    
+    # Suggestions
+    if [[ $(echo "$PARSED_RESULT" | jq -r '.suggestions | length') -gt 0 ]]; then
+        echo -e "Suggestions:"
+        echo "$PARSED_RESULT" | jq -r '.suggestions[] | "- [\(.level)] \(.text)"'
+        echo
+    fi
+    
+    # Clarifying questions
+    if [[ $(echo "$PARSED_RESULT" | jq -r '.clarifying_questions | length') -gt 0 ]]; then
+        echo -e "Clarifying Questions:"
+        echo "$PARSED_RESULT" | jq -r '.clarifying_questions[] | "- \(.)"'
+        echo
+    fi
+    
+    echo -e "Summary:"
+    echo -e "${GREEN}PASS: $PASS_COUNT${NC} | ${YELLOW}WARN: $WARN_COUNT${NC} | ${RED}FAIL: $FAIL_COUNT${NC}"
+fi
+
+# Exit with appropriate code
+STATUS=$(echo "$PARSED_RESULT" | jq -r '.status // "FAIL"')
+case "$STATUS" in
+    PASS)
+        exit 0
+        ;;
+    WARN)
+        exit 0
+        ;;
+    FAIL)
+        exit 1
+        ;;
+    *)
+        exit 2
+        ;;
+esac
