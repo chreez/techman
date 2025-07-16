@@ -1,10 +1,9 @@
 ---
 
-id: spec-validator-bash version: 0.4.1 title: Spec Validator CLI (Bash) status: draft entry\_points:
+id: spec-validator-bash version: 0.4.2 title: Spec Validator CLI (Bash) status: draft entry_points:
 
 * scripts/spec-validate.sh
-* bin/spec-validator
-* run via: `./spec-validate.sh path/to/spec.md`
+* run via: `./scripts/spec-validate.sh path/to/spec.md`
 
 description: > Defines a Bash-based CLI tool that validates a spec file against the core spec-validator logic. Designed for lightweight execution using Claude or OpenAI APIs and basic shell utilities.
 
@@ -31,7 +30,6 @@ Enable fast, local spec validation through a CLI wrapper that leverages remote L
 
   * The spec file itself
   * Git diff (optional)
-  * `promptTemplate-GPT.sh` as system instruction
   * Hardcoded reference spec: `./techman/specs/spec-validator.md`
 
 ## ✅ Success Criteria
@@ -125,8 +123,8 @@ git diff HEAD^ HEAD -- specs/ | ./spec-validate.sh --diff -
 
 ## 🔁 Changelog
 
+* 0.4.2 — Embedded system prompt and removed bin wrapper
 * 0.4.1 — Clarified that diff input must only include spec file changes; stricter filtering of input scope
-* 0.4.0 — Added support for hardcoded reference context and promptTemplate; CLI acts as GPT-facing shim
 * 0.3.0 — Defined output format with error levels, clarified FAIL vs WARN intent
 * 0.2.0 — Added support for `git diff` input and agent usability requirement
 * 0.1.0 — Initial draft
