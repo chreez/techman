@@ -1,18 +1,69 @@
 # Techman
 
-Toolkit for validating and maintaining structured specifications.
+Cozy, emoji-driven toolkit for creating, validating, and evolving structured specifications using AI.
 
 ## Overview
 
-This repository contains:
+This repository provides a complete workflow for specification management:
 
-- **specs/** – reference specifications defining validator behavior
-- **bin/spec-validator** – Bash CLI that validates specs against core spec-validator logic using LLMs
-- **scripts/** – supporting scripts including prompt templates
+- **bin/techman** – 🚀 Main CLI that orchestrates spec creation, editing, and validation with AI assistance
+- **bin/spec-validator** – ✅ Validates specs against core spec-validator logic using LLMs
+- **bin/spec-editor** – ✏️ Creates and updates specs with AI-powered content generation
+- **specs/** – 📄 Reference specifications defining validator behavior and tool specs
+- **scripts/** – 🛠️ Supporting scripts including prompt templates
+
+## Quick Start
+
+### Prerequisites
+
+Set one of these environment variables:
+```bash
+export ANTHROPIC_API_KEY="your-key-here"
+# OR
+export OPENAI_API_KEY="your-key-here"
+```
+
+### Techman Usage
+
+The main workflow tool for specification management:
+
+```bash
+# Create a new spec from natural language
+./bin/techman "Spec for user authentication system"
+
+# Edit an existing spec with AI assistance
+./bin/techman specs/my-spec.md --prompt "add support for OAuth2"
+
+# Interactive editing session
+./bin/techman specs/my-spec.md
+```
+
+Features:
+- ✨ Creates specs from semantic descriptions
+- 🧠 AI-powered field generation and content enhancement
+- 🔁 Automatic validation and fix loop
+- 📦 Git integration with atomic commits
+- 🎯 Smart version bumping based on change type
+
+## Spec Editor Usage
+
+Direct access to spec creation and editing:
+
+```bash
+# Create a new spec interactively
+./bin/spec-editor create my-feature.md
+
+# Create with AI assistance
+./bin/spec-editor create my-feature.md --ai-assist --title="Payment Gateway"
+
+# Update with AI-powered changes
+./bin/spec-editor update specs/my-spec.md --minor --ai-prompt="add webhook support"
+
+# Fork an existing spec
+./bin/spec-editor fork base-spec.md new-variant.md --id=new-feature
+```
 
 ## Spec Validator Usage
-
-The spec validator requires either `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variable to be set.
 
 ### Basic Usage (Single File)
 
@@ -111,3 +162,65 @@ CI/CD pipeline:
 git diff origin/main...HEAD -- specs/ | ./bin/spec-validator --diff - --json > validation.json
 ```
 
+## Workflow Examples
+
+### Complete Spec Lifecycle
+
+```bash
+# 1. Create a new spec from an idea
+./bin/techman "API rate limiting with Redis backend"
+# Output: specs/api-rate-limiting-with-redis-backend.md
+
+# 2. Add a feature
+./bin/techman specs/api-rate-limiting-with-redis-backend.md \
+  --prompt "add support for distributed rate limiting"
+
+# 3. Validate the spec
+./bin/spec-validator specs/api-rate-limiting-with-redis-backend.md
+
+# 4. View the Git history
+git log --oneline specs/api-rate-limiting-with-redis-backend.md
+```
+
+### Batch Operations
+
+```bash
+# Update multiple specs with consistent changes
+for spec in specs/*.md; do
+  ./bin/spec-editor update "$spec" --patch \
+    --changelog="Updated security considerations" \
+    --ai-prompt="add OWASP top 10 considerations"
+done
+
+# Validate all specs
+for spec in specs/*.md; do
+  echo "Validating $spec..."
+  ./bin/spec-validator "$spec"
+done
+```
+
+## Environment Variables
+
+- `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` - Required for AI features
+- `TECHMAN_NO_COMMIT=1` - Skip Git commits in techman
+- `DEBUG=1` - Enable debug output for troubleshooting
+
+## Model Preferences
+
+Tools use the following model preference order:
+1. `claude-3-5-sonnet-20241022` (Anthropic)
+2. `gpt-4o-2024-08-06` (OpenAI)
+3. `gpt-4-turbo-2024-04-09` (OpenAI)
+
+The first available model based on your API key will be used.
+
+## Contributing
+
+1. Create specs using techman
+2. Ensure all specs pass validation
+3. Follow the atomic commit philosophy
+4. Update relevant documentation
+
+## License
+
+See LICENSE file for details.
