@@ -404,8 +404,20 @@ validate_spec() {
 create_backup() {
     local file="$1"
     if [[ "$NO_BACKUP" == "false" ]] && [[ -f "$file" ]]; then
-        cp "$file" "${file}.bak"
-        debug "Created backup: ${file}.bak"
+        # Create .techman/backups directory if it doesn't exist
+        local backup_dir=".techman/backups"
+        mkdir -p "$backup_dir"
+        
+        # Create backup with timestamp
+        local filename=$(basename "$file")
+        local timestamp=$(date +%Y%m%d-%H%M%S)
+        local backup_path="$backup_dir/${filename}.${timestamp}.bak"
+        
+        cp "$file" "$backup_path"
+        debug "Created backup: $backup_path"
+        
+        # Keep only the last 5 backups for each file
+        ls -t "$backup_dir/${filename}".*.bak 2>/dev/null | tail -n +6 | xargs -r rm -f
     fi
 }
 

@@ -1,7 +1,7 @@
 ---
 
 id: techman-workflow
-version: 0.6.0
+version: 0.6.1
 title: Techman Agentic Workflow
 description: Cozy, emoji-driven shell agent that creates, validates, and evolves structured specs using AI, Git, and natural prompts
 entry\_points:
@@ -107,6 +107,8 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 * Non-AI-based fallback validation logic
 
 ## 🔁 Changelog
+
+- **0.6.1** — 2025-07-16 — Test backup functionality
 
 * **0.6.0** — 2025-07-16 — Fixed spec-editor integration: AI now properly generates all required fields in non-interactive mode
 * **0.5.0** — 2025-07-16 — Introduced `--prompt`, emoji-rich logs, interactive mode, and smart version bumping based on Git + intent
