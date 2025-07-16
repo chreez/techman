@@ -1,6 +1,6 @@
 ---
 id: spec-validator-cli-bash
-version: 0.5.5
+version: 0.5.6
 title: Spec Validator CLI (Bash)
 status: active
 entry_points:
@@ -275,6 +275,7 @@ fi
 ```
 
 ## 🔁 Changelog
+  - 0.5.6 — Enhanced prompt template to be more explicit about finding changelog and success criteria sections throughout the document, improving validation accuracy
   - 0.5.5 — Added requirement that --test-llm must identify and summarize the files/specs provided as input to demonstrate successful content parsing
   - 0.5.4 — Modified --test-llm to use content summary prompt instead of validation, providing clearer test output and avoiding JSON parsing requirements
   - 0.5.3 — Enhanced --test-llm command with verbose output including API type, model preference, response statistics, and raw response preview

@@ -381,11 +381,23 @@ PARSED_RESULT=$(echo "$CLEAN_RESULT" | jq -c '.' 2>/dev/null || echo '{"status":
 # Ensure model_used metadata is correct (overwrite LLM response)
 PARSED_RESULT=$(echo "$PARSED_RESULT" | jq --arg model "$MODEL_USED" '.model_used = $model')
 
-# Handle null values in JSON responses - replace with meaningful defaults
+# Handle null values and normalize field names in JSON responses
 PARSED_RESULT=$(echo "$PARSED_RESULT" | jq '
-    .failures[] |= (if .message == null then .message = "Details unavailable" else . end) |
-    .warnings[] |= (if .message == null then .message = "Warning details unavailable" else . end) |
-    .suggestions[] |= (if .text == null then .text = "Suggestion details unavailable" else . end) |
+    .failures[] |= (
+        if .message == null then 
+            .message = (.reason // "Details unavailable") 
+        else . end
+    ) |
+    .warnings[] |= (
+        if .message == null then 
+            .message = (.reason // "Warning details unavailable") 
+        else . end
+    ) |
+    .suggestions[] |= (
+        if .text == null then 
+            .text = (.suggestion // "Suggestion details unavailable") 
+        else . end
+    ) |
     .clarifying_questions |= map(if . == null then "Question details unavailable" else . end)
 ')
 
