@@ -90,7 +90,10 @@ else
   diff_content=""
 fi
 
-system_prompt="$(bash "$(dirname "$0")/../promptTemplate-GPT.sh")"
+read -r -d '' system_prompt <<'EOF'
+You are a Spec Validator. Validate the provided specification against the official Spec Validator specification. Respond in JSON with PASS, WARN, or FAIL status along with recommendations. Use the following format:
+{"status":"PASS|WARN|FAIL","summary":{"pass":0,"warn":0,"fail":0},"failures":[],"warnings":[],"suggestions":[]}
+EOF
 
 user_message="REFERENCE SPEC:\n${reference_spec}\n\nSPEC FILE (${spec_file}):\n${spec_content}"
 if [[ -n "$diff_content" ]]; then
