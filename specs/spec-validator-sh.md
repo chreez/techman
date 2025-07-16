@@ -1,6 +1,6 @@
 ---
 id: spec-validator-cli-bash
-version: 0.5.1
+version: 0.5.2
 title: Spec Validator CLI (Bash)
 status: active
 entry_points:
@@ -46,6 +46,9 @@ Enable fast, local spec validation through a CLI wrapper that leverages remote L
   • Fails gracefully with error output if file is invalid or model API fails
   • Ignores non-spec diffs when parsing git diff
   • When using diff mode with a root file, validates changes in context of the full spec
+  • LLM responses are properly parsed and null values are never displayed to users
+  • Warning and error messages contain meaningful content (not "null" or empty strings)
+  • All validation feedback includes line numbers and actionable descriptions
   • Agent can use tool by piping staged spec changes:
 
 ```bash
@@ -145,6 +148,49 @@ git diff HEAD^ HEAD -- specs/ | ./bin/spec-validator --diff -
 - Diff mode validation
 - Error handling for missing files
 - Model fallback behavior
+- LLM response parsing (including null value handling)
+- Markdown code block stripping from LLM responses
+
+### Debugging Workflow
+
+When encountering issues like null values in output:
+
+```bash
+# Enable debug mode to see raw LLM responses
+DEBUG=1 ./bin/spec-validator specs/example.md
+
+# Save raw LLM response for inspection
+./bin/spec-validator specs/example.md 2>debug.log
+
+# Test with minimal spec to isolate issues
+echo '---
+id: test-spec
+version: 1.0.0
+title: Test Spec
+status: active
+entry_points: [test]
+description: Minimal test spec
+---
+# Test Content' > /tmp/test.md
+
+./bin/spec-validator /tmp/test.md
+
+# Verify JSON parsing with sample response
+echo '{"status":"PASS","warnings":[{"line":5,"message":"test"}]}' | jq .
+```
+
+### LLM Integration Testing
+
+```bash
+# Test OpenAI integration
+OPENAI_API_KEY=your-key ./bin/spec-validator --test-llm
+
+# Test Anthropic integration  
+ANTHROPIC_API_KEY=your-key ./bin/spec-validator --test-llm
+
+# Verify response parsing with known inputs
+./bin/spec-validator --dry-run specs/example.md > expected-prompt.txt
+```
 
 ## 🛠️ Implementation Notes
 
@@ -157,6 +203,15 @@ git diff HEAD^ HEAD -- specs/ | ./bin/spec-validator --diff -
 - Strip markdown code blocks (```json) from LLM responses before parsing
 - Use sed or similar to clean: `sed -e 's/^```json//' -e 's/^```//' -e 's/```$//'`
 - Provide fallback JSON structure for parse failures
+- Handle null values in JSON responses:
+  ```bash
+  # Check for null values and provide defaults
+  message=$(echo "$response" | jq -r '.warnings[0].message // "Unknown warning"')
+  if [ "$message" = "null" ]; then
+    message="Warning details unavailable"
+  fi
+  ```
+- Log raw LLM responses when DEBUG=1 for troubleshooting
 
 ### Model Selection
 - Check API type before attempting model calls
@@ -204,6 +259,7 @@ fi
 ```
 
 ## 🔁 Changelog
+  - 0.5.2 — Added debugging workflow, null value handling, and LLM integration testing procedures
   - 0.5.1 — Added requirement for root file when using diff mode to provide complete validation context
   - 0.5.0 — Added implementation guidance for JSON escaping, markdown stripping, API-model compatibility, and relative path resolution
   - 0.4.4 — Added model_used metadata to outputs; defined preferred LLMs based on real-time evaluation research; standardized bin directory usage
