@@ -188,8 +188,14 @@ PROMPT_TEMPLATE=$(cat "$PROMPT_TEMPLATE_PATH")
 # Prepare the full prompt
 if [[ "$TEST_LLM" == true ]]; then
     # Test mode uses a different prompt to verify LLM connectivity
-    FULL_PROMPT="Please provide a summary of the content you received in less than 300 words. The input context is:
+    FULL_PROMPT="Please provide a summary of the content you received in less than 300 words. Your response must include:
+1. A quick summary of the files or specs you were given
+2. Identification of the type of content (spec file, configuration, etc.)
+3. Demonstration of successful parsing and understanding of the input
 
+The input context is from file: ${SPEC_FILE:-"test input"}
+
+Content:
 $SPEC_CONTENT"
 else
     # Normal validation mode

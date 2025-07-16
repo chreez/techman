@@ -1,6 +1,6 @@
 ---
 id: spec-validator-cli-bash
-version: 0.5.4
+version: 0.5.5
 title: Spec Validator CLI (Bash)
 status: active
 entry_points:
@@ -49,6 +49,7 @@ Enable fast, local spec validation through a CLI wrapper that leverages remote L
   • LLM responses are properly parsed and null values are never displayed to users
   • Warning and error messages contain meaningful content (not "null" or empty strings)
   • All validation feedback includes line numbers and actionable descriptions
+  • Test-LLM mode must identify and summarize the files/specs provided as input
   • Agent can use tool by piping staged spec changes:
 
 ```bash
@@ -200,6 +201,11 @@ The `--test-llm` command provides verbose output including:
 - Full content summary response (uses different prompt than validation)
 - Overall test status
 
+**Test-LLM Requirements:**
+- Must include a quick summary of the files or specs it was given in the response
+- Should identify the type of content (spec file, configuration, etc.)
+- Response should demonstrate successful parsing and understanding of input content
+
 Note: Test mode uses a content summary prompt rather than validation to verify LLM connectivity without requiring JSON parsing.
 
 ## 🛠️ Implementation Notes
@@ -269,6 +275,7 @@ fi
 ```
 
 ## 🔁 Changelog
+  - 0.5.5 — Added requirement that --test-llm must identify and summarize the files/specs provided as input to demonstrate successful content parsing
   - 0.5.4 — Modified --test-llm to use content summary prompt instead of validation, providing clearer test output and avoiding JSON parsing requirements
   - 0.5.3 — Enhanced --test-llm command with verbose output including API type, model preference, response statistics, and raw response preview
   - 0.5.2 — Added debugging workflow, null value handling, and LLM integration testing procedures
