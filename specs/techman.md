@@ -1,11 +1,11 @@
 ---
-id: specman-workflow
-version: 0.3.0
-title: Specman Agentic Workflow
+id: techman-workflow
+version: 0.3.1
+title: Techman Agentic Workflow
 description: Shell-based agent that creates, validates, and auto-fixes structured specs using Techman tools with atomic Git commits
 entry_points:
-  - "bin/specman [semantic_input]"
-  - "bin/specman [spec_file.md]"
+  - "bin/techman [semantic_input]"
+  - "bin/techman [spec_file.md]"
 status: active
 ---
 
@@ -45,7 +45,7 @@ Create a deterministic CLI agent that generates and validates structured specs u
 ## 🛠️ Implementation Notes
 
 ### Atomic Workflow Commit Policy
-- All `specman` changes are atomic by design
+- All `techman` changes are atomic by design
 - Git is required for mutation workflows unless `TECHMAN_NO_COMMIT=1` is explicitly set
 - Commit messages follow a predictable pattern:
   - `Initial spec: foo.md`
@@ -63,6 +63,8 @@ Create a deterministic CLI agent that generates and validates structured specs u
 - Fix iteration limit: now allows full AI-assisted fix pass with one loop
 
 ## 🔁 Changelog
+
+- **0.3.1** — 2025-07-16 — 
 
 ### 0.3.0 - 2025-07-16
 - Enabled full AI-assisted fixing via `spec-editor update --ai-assist`
