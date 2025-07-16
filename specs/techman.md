@@ -1,14 +1,12 @@
----
-
+```yaml
 id: techman-workflow
-version: 0.6.1
+version: 0.7.0
 title: Techman Agentic Workflow
 description: Cozy, emoji-driven shell agent that creates, validates, and evolves structured specs using AI, Git, and natural prompts
-entry\_points:
-
-* "bin/techman \[semantic\_input]"
-* "bin/techman \[spec\_file.md]"
-* "bin/techman spec.md --prompt \[freeform prompt]"
+entry_points:
+  - "bin/techman [semantic_input]"
+  - "bin/techman [spec_file.md]"
+  - "bin/techman spec.md --prompt [freeform prompt]"
   status: active
 
 ---
@@ -108,9 +106,12 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 
 ## 🔁 Changelog
 
-- **0.6.1** — 2025-07-16 — Test backup functionality
+- **0.7.0** — 2025-07-16 — AI edit: Fix entry_points formatting to be a proper YAML list
 
+- **0.6.2** — 2025-07-16 — Corrected entry_points format to a proper YAML list
+- **0.6.1** — 2025-07-16 — Test backup functionality
 * **0.6.0** — 2025-07-16 — Fixed spec-editor integration: AI now properly generates all required fields in non-interactive mode
 * **0.5.0** — 2025-07-16 — Introduced `--prompt`, emoji-rich logs, interactive mode, and smart version bumping based on Git + intent
 * **0.3.2** — 2025-07-16 — Auto-fix validation issues: Fixed failures.
 * **0.3.0** — 2025-07-16 — Enabled full AI-assisted fixing, enforced atomic Git commits
+```
