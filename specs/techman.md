@@ -1,8 +1,8 @@
 ---
 id: specman-workflow
-version: 0.2.0
+version: 0.3.0
 title: Specman Agentic Workflow
-description: Lightweight shell-based agent that generates and validates structured specs using existing Techman tools with auto-fix iteration
+description: Shell-based agent that creates, validates, and auto-fixes structured specs using Techman tools with atomic Git commits
 entry_points:
   - "bin/specman [semantic_input]"
   - "bin/specman [spec_file.md]"
@@ -11,58 +11,62 @@ status: active
 
 ## 🧠 Goal
 
-Create a lightweight shell-based agent that generates and validates structured specs using existing Techman tools, with a single auto-fix iteration for quality improvement.
+Create a deterministic CLI agent that generates and validates structured specs using Techman tooling, auto-fixes issues using AI, and commits each atomic edit to Git by default.
 
 ## ⚙️ Functionality
 
 - Accepts one of:
-  - Semantic input (e.g., "Create a spec about login throttling")
+  - Semantic input (e.g., "Spec for login throttling")
   - An existing `.md` spec file (partial or complete)
-- Uses `bin/spec-editor` with AI assistance to generate or update the spec
-- Runs validation (`bin/spec-validator --json`) and captures structured feedback
-- If `FAIL` or `WARN`:
-  - Updates spec with changelog entry documenting the issues
-  - Manually fixes known issues (e.g., empty entry_points)
-  - Increments the patch version
-  - Commits changes to git
-- Stops after one fix iteration
-- Redirects all status output to stderr to keep stdout clean for scripting
+- Uses `bin/spec-editor` with `--ai-assist` for both creation and update
+- Runs validation using `bin/spec-validator --json`
+- If validation returns `FAIL` or `WARN`:
+  - Fixes are applied using `--ai-assist`
+  - Changelog entry is appended for traceability
+  - Patch version is incremented automatically
+  - **All changes are committed to Git** before and after fix (if inside a repo)
+- CLI output is split:
+  - `stdout`: returns spec file path for scripting
+  - `stderr`: status, logs, and AI feedback
+- Disabling commits is possible via env flag `TECHMAN_NO_COMMIT=1` for dry-run or testing
 
 ## ✅ Success Criteria
 
-- Produces a syntactically valid spec with required frontmatter:
+- Spec must contain complete frontmatter:
   - `id`, `version`, `title`, `status`, `description`, `entry_points`
-- Completes validation with no `FAIL` status after fix pass
-- Version is incremented if a fix is applied
-- File is committed both before and after auto-fix
-- Uses AI assistance only for initial creation (not for fixes due to current limitations)
-- Workflow runs with a single command from CLI
-- Generates meaningful spec IDs from semantic input (kebab-case, max 50 chars)
+- Ends in `PASS` status after a single fix loop
+- Version is patched only if AI-assisted update occurs
+- Commits exist for:
+  - Initial creation/update
+  - Post-fix result (if applicable)
+- Semantic input generates kebab-case spec IDs (≤ 50 chars)
+- Spec output is deterministic and traceable via Git
 
 ## 🛠️ Implementation Notes
 
-### Key Design Decisions
-- Uses `jq` for reliable JSON parsing of validation results
-- Redirects spec-editor output to stderr to prevent pollution of captured file paths
-- Implements manual fixes for common issues (e.g., empty entry_points) since AI-assisted updates are limited
-- Uses sed for in-place file modifications when fixing known issues
-- Validates existence of either ANTHROPIC_API_KEY or OPENAI_API_KEY at startup
+### Atomic Workflow Commit Policy
+- All `specman` changes are atomic by design
+- Git is required for mutation workflows unless `TECHMAN_NO_COMMIT=1` is explicitly set
+- Commit messages follow a predictable pattern:
+  - `Initial spec: foo.md`
+  - `Auto-fix validation issues for foo.md`
 
-### Known Limitations
-- Auto-fix capability is limited by spec-editor's lack of AI support for update commands
-- Currently only fixes empty entry_points warning; other issues require manual intervention
-- Fix iteration is limited to updating changelog and basic field corrections
+### Technical Choices
+- Relies on `jq` for safe parsing of validator JSON
+- Uses stderr for all human-readable messaging
+- AI fixes use `spec-editor update --ai-assist` exclusively
+- Manual fix logic (e.g. `sed` patching) is deprecated as of 0.3.0
+
+## 🚫 Deprecated / Removed
+- Manual fixes for known fields like `entry_points`
+- Non-AI fallback logic for validation warnings
+- Fix iteration limit: now allows full AI-assisted fix pass with one loop
 
 ## 🔁 Changelog
 
-### 0.2.0 - 2025-07-16
-- Updated functionality to reflect actual implementation using spec-editor
-- Changed status from draft to active
-- Corrected success criteria section header
-- Added implementation notes documenting design decisions and limitations
-- Updated to accurately describe the auto-fix process without AI assistance
-
-### 0.1.1 - 2025-07-16
-- Added missing frontmatter fields (description, entry_points)
-- Added changelog section
-- Initial draft specification
+### 0.3.0 - 2025-07-16
+- Enabled full AI-assisted fixing via `spec-editor update --ai-assist`
+- All changes now default to Git commit for atomicity
+- Added `TECHMAN_NO_COMMIT=1` to support test environments
+- Removed manual patching logic
+- Updated spec description, goal, and implementation notes
