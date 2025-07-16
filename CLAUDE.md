@@ -161,3 +161,4 @@ Standard exit codes across tools:
 - Tools create backups before modifying files
 - Validation is integrated into the editing workflow
 - JSON output modes available for CI/CD integration
+- Clean up test specs and commits: `git log --oneline | grep -E "(test|Test)" | head -5` then `git reset --hard HEAD~N` to remove test commits

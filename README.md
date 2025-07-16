@@ -199,6 +199,23 @@ for spec in specs/*.md; do
 done
 ```
 
+## Dotfiles Integration
+
+For system-wide access, wrapper tools are available via the dotfiles system:
+
+```bash
+# Works from any directory
+~/.dotfiles/bin/techman "Spec for user authentication"
+~/.dotfiles/bin/spec_validator specs/my-spec.md
+~/.dotfiles/bin/spec_editor create auth-spec.md --ai-assist
+```
+
+The wrapper tools automatically:
+- Detect techman installation in common workspace locations
+- Convert relative paths to absolute paths
+- Work from any directory in the system
+- Maintain full compatibility with all original features
+
 ## Environment Variables
 
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` - Required for AI features

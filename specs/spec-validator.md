@@ -170,11 +170,40 @@ This format strikes a balance between human readability and machine verifiabilit
 
 ## ✅ Success Criteria
 
+### Core Validation Behavior
 - Validator correctly identifies all required fields in spec documents
 - Validator produces structured output suitable for both human and machine consumption
 - Validation rules are consistently applied across all spec types
 - False positives are minimized through contextual understanding
 - Validator can process both individual files and batches efficiently
+
+### Path Resolution and Directory Independence
+- Works from any directory when called via wrapper tools
+- Handles both absolute and relative file paths correctly
+- Converts relative paths to absolute paths seamlessly
+- Functions properly when installed in dotfiles system
+- Maintains compatibility with both direct and wrapper invocations
+
+### Output Format and Status Codes
+- Returns appropriate exit codes: 0 for PASS/WARN, 1 for FAIL, 2 for errors
+- Provides clear human-readable output with file paths and line numbers
+- Supports JSON output mode for machine processing
+- Includes model information and usage statistics
+- Warnings are actionable and include specific improvement suggestions
+
+### Error Handling and Robustness
+- Gracefully handles missing or malformed spec files
+- Provides helpful error messages for common issues
+- Supports diff mode for validating git changes
+- Handles API failures with appropriate fallback behavior
+- Maintains consistent behavior across different API providers (Anthropic/OpenAI)
+
+### Integration Requirements
+- Integrates seamlessly with spec-editor and techman workflow
+- Supports stdin input for CI/CD pipelines
+- Validates spec files against reference spec-validator.md
+- Provides structured feedback for automated fixing
+- Works reliably in both interactive and batch processing modes
 
 ---
 

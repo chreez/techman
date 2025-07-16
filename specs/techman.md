@@ -67,6 +67,7 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 
 ## ✅ Success Criteria
 
+### Core Workflow Functionality
 * Spec includes: `id`, `version`, `title`, `status`, `description`, `entry_points`
 * Ends with `PASS` after fix loop
 * Version bumped based on intent
@@ -74,6 +75,41 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 * Spec file is traceable via Git history
 * Compatible with scripting (clean stdout)
 * Interactive sessions tracked under `.techman/session.json`
+
+### Path Resolution and Directory Independence
+* Works from any directory when called via wrapper tools
+* Handles both absolute and relative paths for spec files
+* Creates and edits specs in correct directories regardless of current working directory
+* Maintains proper file references in commit messages and logs
+* Functions properly when installed in dotfiles system
+
+### AI Integration and Content Quality
+* Semantic input produces well-structured, complete specs
+* AI-generated content passes validation on first attempt
+* Prompt-based edits are contextually appropriate and preserve existing content
+* AI fixes address actual validation issues effectively
+* Generated changelog entries are meaningful and descriptive
+
+### Version Control and Commit Management
+* Commit messages follow specified format: "Spec Update: {filename} - {change description}"
+* Commit bodies include brief summary of changes
+* Uses appropriate tagline: "🐛 Generated with Techman"
+* Atomic commits for each meaningful change
+* Git history is clean and traceable
+
+### User Experience and Interface
+* Emoji-driven output is consistent and informative
+* Interactive mode provides clear guidance and options
+* Error messages are helpful and actionable
+* Output separation: spec path to stdout, logs to stderr
+* Handles edge cases gracefully without crashes
+
+### Integration with Tool Ecosystem
+* Seamlessly integrates with spec-validator for validation
+* Uses spec-editor for all creation and update operations
+* Validation feedback loop works reliably
+* Auto-fix attempts are intelligent and effective
+* Works within both direct and wrapper tool contexts
 
 ## 🛠️ Implementation Notes
 

@@ -49,22 +49,57 @@ Enable assisted spec creation and editing through a CLI that ensures all specs m
   - Validates edits before saving (using spec-validator internally)
 
 ## ✅ Success Criteria
-  • Creates valid specs that pass spec-validator checks on first attempt
-  • AI-assisted creation in non-interactive mode produces complete, valid specs
-  • All required fields (description, entry_points) are populated when using --ai-assist
-  • Preserves existing content when updating specs
-  • Correctly increments version numbers based on change severity
-  • Generates meaningful changelog entries
-  • Interactive mode guides users through required fields
-  • Batch mode processes multiple files efficiently
-  • Never overwrites files without confirmation or backup
-  • Maintains consistent formatting across all sections
-  • Update command with --ai-prompt applies targeted content changes
-  • Agent can use tool to programmatically create/update specs:
+
+### Core Functionality
+- Creates valid specs that pass spec-validator checks on first attempt
+- AI-assisted creation in non-interactive mode produces complete, valid specs
+- All required fields (description, entry_points) are populated when using --ai-assist
+- Preserves existing content when updating specs
+- Correctly increments version numbers based on change severity
+- Generates meaningful changelog entries
+- Interactive mode guides users through required fields
+- Batch mode processes multiple files efficiently
+- Never overwrites files without confirmation or backup
+- Maintains consistent formatting across all sections
+
+### Path Resolution and Directory Independence
+- Works from any directory when called via wrapper tools
+- Handles both absolute and relative file paths correctly
+- Creates files in correct directories regardless of current working directory
+- Resolves relative paths to absolute paths for cross-directory operations
+- Functions properly when installed in dotfiles system
+
+### AI Integration and Content Generation
+- Update command with --ai-prompt applies targeted content changes
+- AI-generated content is contextually appropriate and well-structured
+- LLM responses are validated and sanitized before inclusion
+- Fallback behavior when AI fails maintains tool functionality
+- AI-assisted updates preserve existing spec structure and formatting
+
+### Version Management and Backup
+- Automatic version bumping follows semantic versioning rules
+- Backup files are stored in .techman/backups/ with timestamps
+- Maintains last 5 backups per file for recovery
+- Version changes are reflected in changelog entries
+- Git integration works seamlessly with version control
+
+### Command Line Interface
+- Supports both interactive and non-interactive modes
+- Provides clear feedback and progress indication
+- Error messages are helpful and actionable
+- Command-line arguments are properly parsed and validated
+- Agent can use tool to programmatically create/update specs:
 
 ```bash
 echo "Create a spec for a user authentication module" | ./bin/spec-editor create --stdin auth-spec.md
 ```
+
+### Integration with Workflow
+- Integrates seamlessly with spec-validator for validation
+- Works within techman workflow for end-to-end spec management
+- Supports forking and templating for spec reuse
+- Handles edge cases like malformed input gracefully
+- Provides consistent output format for scripting
 
 ## 📤 Output Format
 
