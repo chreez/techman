@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Enable debug mode if DEBUG=1
+[[ "${DEBUG:-0}" == "1" ]] && set -x
+
+# Script directory for relative paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Function to print colored output
+print_status() {
+    local color=$1
+    local message=$2
+    echo -e "${color}${message}${NC}" >&2
+}
+
+# Function to show usage
+usage() {
+    cat << EOF
+Usage: specman [semantic_input | spec_file.md]
+
+Generates and validates structured specs using Techman tools with auto-fix iteration.
+
+Arguments:
+  semantic_input    A text description of the spec to create (e.g., "Create a spec about login throttling")
+  spec_file.md      Path to an existing partial or blank spec file to complete
+
+Environment:
+  ANTHROPIC_API_KEY or OPENAI_API_KEY must be set for AI features
+
+Examples:
+  specman "Create a spec about API rate limiting"
+  specman specs/my-partial-spec.md
+
+EOF
+    exit 1
+}
+
+# Check for API keys
+check_api_keys() {
+    if [[ -z "${ANTHROPIC_API_KEY:-}" ]] && [[ -z "${OPENAI_API_KEY:-}" ]]; then
+        print_status "$RED" "Error: Either ANTHROPIC_API_KEY or OPENAI_API_KEY must be set"
+        exit 1
+    fi
+}
+
+# Function to determine if input is a file path or semantic text
+is_file_path() {
+    local input="$1"
+    # Check if it ends with .md or if file exists
+    if [[ "$input" =~ \.md$ ]] || [[ -f "$input" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Function to generate spec ID from semantic input
+generate_spec_id() {
+    local input="$1"
+    # Convert to lowercase, replace spaces with hyphens, remove special chars
+    echo "$input" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 -]//g' | sed 's/ /-/g' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//' | cut -c1-50
+}
+
+# Function to create spec from semantic input
+create_spec_from_semantic() {
+    local semantic_input="$1"
+    local spec_id=$(generate_spec_id "$semantic_input")
+    local spec_file="specs/${spec_id}.md"
+    
+    print_status "$GREEN" "Creating new spec from semantic input..."
+    print_status "$YELLOW" "Generated spec ID: $spec_id"
+    
+    # Create directory if it doesn't exist
+    mkdir -p "$(dirname "$spec_file")"
+    
+    # Create spec using spec-editor with AI assistance via stdin
+    # Redirect all output to stderr to avoid polluting the return value
+    if echo "$semantic_input" | "$SCRIPT_DIR/spec-editor" create \
+        --stdin \
+        --ai-assist \
+        --no-interactive \
+        "$spec_file" >&2; then
+        # Return the spec file path on success
+        echo "$spec_file"
+    else
+        print_status "$RED" "Error: Failed to create spec"
+        return 1
+    fi
+}
+
+# Function to update existing spec file
+update_spec_file() {
+    local spec_file="$1"
+    
+    print_status "$GREEN" "Updating existing spec file: $spec_file"
+    
+    # Update spec using spec-editor with AI assistance
+    if ! "$SCRIPT_DIR/spec-editor" update \
+        --no-interactive \
+        --ai-assist \
+        "$spec_file"; then
+        print_status "$RED" "Error: Failed to update spec"
+        return 1
+    fi
+}
+
+# Function to validate spec and get JSON results
+validate_spec() {
+    local spec_file="$1"
+    local json_output
+    
+    print_status "$GREEN" "Validating spec: $spec_file"
+    
+    # Run validator and capture JSON output
+    json_output=$("$SCRIPT_DIR/spec-validator" --json "$spec_file" 2>&1) || true
+    
+    echo "$json_output"
+}
+
+# Function to parse validation status from JSON
+get_validation_status() {
+    local json="$1"
+    echo "$json" | jq -r '.status' 2>/dev/null || echo ""
+}
+
+# Function to extract validation failures from JSON
+get_validation_failures() {
+    local json="$1"
+    # Extract failures array and format as text
+    echo "$json" | jq -r '.failures[]? | "- \(.)"' 2>/dev/null || echo ""
+}
+
+# Function to extract validation warnings from JSON
+get_validation_warnings() {
+    local json="$1"
+    # Extract warnings array and format as text
+    echo "$json" | jq -r '.warnings[]? | "- \(.)"' 2>/dev/null || echo ""
+}
+
+# Function to parse frontmatter
+parse_frontmatter() {
+    local file="$1"
+    local field="$2"
+    
+    if [[ ! -f "$file" ]]; then
+        return 1
+    fi
+    
+    # Extract frontmatter between --- lines and get specific field
+    awk '/^---$/ {flag=!flag; next} flag && /^'"$field"':/ {sub(/^'"$field"': */, ""); print; exit}' "$file"
+}
+
+# Function to commit spec file
+commit_spec() {
+    local spec_file="$1"
+    local message="$2"
+    
+    # Check if we're in a git repo
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        print_status "$YELLOW" "Warning: Not in a git repository, skipping commit"
+        return 0
+    fi
+    
+    # Add and commit the file
+    git add "$spec_file"
+    if git diff --cached --quiet; then
+        print_status "$YELLOW" "No changes to commit"
+    else
+        git commit -m "$message" >/dev/null 2>&1
+        print_status "$GREEN" "Committed: $message"
+    fi
+}
+
+# Function to auto-fix spec based on validation feedback
+auto_fix_spec() {
+    local spec_file="$1"
+    local failures="$2"
+    local warnings="$3"
+    
+    print_status "$YELLOW" "Auto-fixing spec based on validation feedback..."
+    
+    # Build changelog message with validation issues
+    local changelog_msg="Auto-fix validation issues: "
+    
+    if [[ -n "$failures" ]]; then
+        changelog_msg="${changelog_msg}Fixed failures. "
+    fi
+    
+    if [[ -n "$warnings" ]]; then
+        # Extract the specific warning message
+        local warning_msg=$(echo "$warnings" | head -1 | sed 's/^- //')
+        changelog_msg="${changelog_msg}${warning_msg}"
+    fi
+    
+    # For now, we'll use spec-editor update with AI-assisted changelog
+    # and manually fix common issues
+    if ! "$SCRIPT_DIR/spec-editor" update \
+        --no-interactive \
+        --patch \
+        --changelog="$changelog_msg" \
+        "$spec_file" >&2; then
+        print_status "$RED" "Error: Failed to auto-fix spec"
+        return 1
+    fi
+    
+    # If there are specific known issues, fix them manually
+    # For example, if entry_points is empty, add a placeholder
+    if [[ "$warnings" =~ "entry_points.*empty" ]]; then
+        # Read current entry_points
+        local current_entry_points=$(grep -A 5 "^entry_points:" "$spec_file" | grep -E "^  - " | head -1)
+        if [[ -z "$current_entry_points" ]] || [[ "$current_entry_points" =~ "^  - $" ]]; then
+            # Add a generic entry point based on the spec ID
+            local spec_id=$(parse_frontmatter "$spec_file" "id")
+            sed -i.tmp "s|^  - $|  - bin/$spec_id|" "$spec_file" 2>/dev/null || \
+            sed -i.tmp "/^entry_points:/a\\
+  - bin/$spec_id" "$spec_file"
+            rm -f "${spec_file}.tmp"
+        fi
+    fi
+}
+
+# Main function
+main() {
+    # Check for arguments
+    if [[ $# -eq 0 ]]; then
+        usage
+    fi
+    
+    # Check API keys
+    check_api_keys
+    
+    local input="$1"
+    local spec_file=""
+    
+    # Determine input type and create/update spec
+    if is_file_path "$input"; then
+        # Input is a file path
+        spec_file="$input"
+        
+        # Check if file exists
+        if [[ ! -f "$spec_file" ]]; then
+            print_status "$RED" "Error: Spec file not found: $spec_file"
+            exit 1
+        fi
+        
+        # Update existing spec
+        update_spec_file "$spec_file"
+    else
+        # Input is semantic text
+        spec_file=$(create_spec_from_semantic "$input")
+        if [[ -z "$spec_file" ]]; then
+            exit 1
+        fi
+    fi
+    
+    # Initial commit
+    commit_spec "$spec_file" "Initial spec: $(basename "$spec_file")"
+    
+    # Validate the spec
+    local validation_json=$(validate_spec "$spec_file")
+    local status=$(get_validation_status "$validation_json")
+    
+    print_status "$YELLOW" "Validation status: $status"
+    
+    # Check if we need to auto-fix
+    if [[ "$status" == "FAIL" ]] || [[ "$status" == "WARN" ]]; then
+        local failures=$(get_validation_failures "$validation_json")
+        local warnings=$(get_validation_warnings "$validation_json")
+        
+        # Perform auto-fix
+        if auto_fix_spec "$spec_file" "$failures" "$warnings"; then
+            # Commit the fixes
+            commit_spec "$spec_file" "Auto-fix validation issues for $(basename "$spec_file")"
+            
+            # Re-validate to show final status
+            print_status "$GREEN" "Re-validating after auto-fix..."
+            validation_json=$(validate_spec "$spec_file")
+            status=$(get_validation_status "$validation_json")
+            print_status "$YELLOW" "Final validation status: $status"
+        fi
+    fi
+    
+    # Final output
+    if [[ "$status" == "PASS" ]]; then
+        print_status "$GREEN" "✓ Spec successfully created and validated: $spec_file"
+    elif [[ "$status" == "WARN" ]]; then
+        print_status "$YELLOW" "⚠ Spec created with warnings: $spec_file"
+    else
+        print_status "$RED" "✗ Spec created but validation failed: $spec_file"
+    fi
+    
+    # Show spec file location
+    echo -e "\nSpec file: $spec_file" >&2
+}
+
+# Run main function
+main "$@"

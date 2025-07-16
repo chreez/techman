@@ -1,6 +1,6 @@
 ---
 id: spec-editor-cli-bash
-version: 0.1.0
+version: 0.1.1
 title: Spec Editor CLI (Bash)
 status: active
 entry_points:
@@ -186,6 +186,21 @@ ANTHROPIC_API_KEY=your-key ./bin/spec-editor update --ai-changelog my-spec.md
 ```
 
 ## 🛠️ Implementation Notes
+
+### Known Limitations (v0.1.1)
+- The `update` command does not currently support `--ai-prompt` option for AI-assisted content updates
+- AI assistance for updates is limited to `--ai-changelog` for generating changelog entries
+- Workaround: Use `--ai-assist` flag without specific prompt for general AI enhancement during updates
+
+## 🔁 Changelog
+
+### 0.1.1 - 2025-07-16
+- Documented known limitation: AI assistance for update command is limited
+- Clarified that --ai-prompt is only supported for create command
+- Added workaround notes for AI-assisted updates
+
+### 0.1.0 - Initial Version
+- Initial specification for spec-editor CLI tool
 
 ### Spec Creation Flow
 1. Gather required fields (interactive or flags)
