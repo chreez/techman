@@ -12,18 +12,21 @@ NC='\033[0m' # No Color
 JSON_OUTPUT=false
 DIFF_MODE=false
 DIFF_FILE=""
+ROOT_SPEC_FILE=""
 MODEL_PREFERENCE=("claude-3-5-sonnet-20241022" "gpt-4o-2024-08-06" "gpt-4-turbo-2024-04-09")
 
 # Usage function
 usage() {
     cat << EOF
 Usage: $0 [OPTIONS] <spec_file>
+       $0 [OPTIONS] --diff <diff_file> <root_spec_file>
 
 Validates a spec file against the core spec-validator logic using Claude or OpenAI APIs.
 
 OPTIONS:
     --json          Output results in JSON format
     --diff <file>   Validate only the diff content (use '-' for stdin)
+                    When using --diff, a root spec file is REQUIRED for context
     -h, --help      Show this help message
 
 REQUIRED:
@@ -32,7 +35,8 @@ REQUIRED:
 EXAMPLES:
     $0 specs/example.md
     $0 --json specs/example.md > result.json
-    git diff --cached specs/ | $0 --diff - > result.json
+    git diff --cached specs/ | $0 --diff - specs/target-spec.md
+    $0 --diff changes.patch specs/my-feature.md
 EOF
     exit 1
 }
@@ -62,19 +66,34 @@ while [[ $# -gt 0 ]]; do
             error "Unknown option: $1"
             ;;
         *)
-            SPEC_FILE="$1"
+            if [[ "$DIFF_MODE" == true ]] && [[ -z "$ROOT_SPEC_FILE" ]]; then
+                ROOT_SPEC_FILE="$1"
+            else
+                SPEC_FILE="$1"
+            fi
             shift
             ;;
     esac
 done
 
 # Validate required inputs
-if [[ -z "${SPEC_FILE:-}" ]] && [[ "$DIFF_MODE" != true ]]; then
-    error "Spec file path is required"
-fi
-
-if [[ "$DIFF_MODE" == true ]] && [[ -z "$DIFF_FILE" ]]; then
-    error "Diff file required when using --diff mode"
+if [[ "$DIFF_MODE" == true ]]; then
+    if [[ -z "$DIFF_FILE" ]]; then
+        error "Diff file required when using --diff mode"
+    fi
+    if [[ -z "$ROOT_SPEC_FILE" ]]; then
+        error "Root spec file is REQUIRED when using --diff mode to provide complete validation context"
+    fi
+    if [[ ! -f "$ROOT_SPEC_FILE" ]]; then
+        error "Root spec file not found: $ROOT_SPEC_FILE"
+    fi
+else
+    if [[ -z "${SPEC_FILE:-}" ]]; then
+        error "Spec file path is required"
+    fi
+    if [[ ! -f "$SPEC_FILE" ]]; then
+        error "Spec file not found: $SPEC_FILE"
+    fi
 fi
 
 # Check for API keys
@@ -96,19 +115,26 @@ if [[ "$DIFF_MODE" == true ]]; then
         DIFF_CONTENT=$(cat "$DIFF_FILE")
     fi
     
-    # Extract spec file paths from diff
-    SPEC_FILES=$(echo "$DIFF_CONTENT" | grep -E '^(diff --git|---|\+\+\+)' | grep -E '\.(md|yaml|yml)' | sed -E 's/^(diff --git a\/|---|\\+\\+\\+\s+[ab]\/)//g' | sort -u)
+    # Extract spec file paths from diff and verify they match our root file
+    SPEC_FILES=$(echo "$DIFF_CONTENT" | awk '/^(diff --git|---|\+\+\+)/ && /\.(md|yaml|yml)/ {
+        gsub(/^(diff --git a\/|---|\\+\\+\\+\s+[ab]\/)/, "");
+        print
+    }' | sort -u)
     
     if [[ -z "$SPEC_FILES" ]]; then
         error "No spec files found in diff"
     fi
     
-    # For now, just process the diff content as the spec content
-    SPEC_CONTENT="$DIFF_CONTENT"
+    # Read the root spec file for context
+    ROOT_CONTENT=$(cat "$ROOT_SPEC_FILE")
+    
+    # Combine root file content with diff for complete context
+    SPEC_CONTENT="Original spec file content:
+$ROOT_CONTENT
+
+Changes being validated (from diff):
+$DIFF_CONTENT"
 else
-    if [[ ! -f "$SPEC_FILE" ]]; then
-        error "Spec file not found: $SPEC_FILE"
-    fi
     SPEC_CONTENT=$(cat "$SPEC_FILE")
 fi
 
@@ -118,9 +144,10 @@ SPEC_VALIDATOR_SPEC=$(cat "$(dirname "$0")/../specs/spec-validator.md")
 # Read the prompt template
 PROMPT_TEMPLATE=$(cat "$(dirname "$0")/../scripts/promptTemplate-GPT.sh")
 
-# Create a temporary file for the request
-TEMP_DIR=$(mktemp -d)
-trap "rm -rf $TEMP_DIR" EXIT
+# Create a temporary directory for the request (working directory, not system /tmp)
+TMP_DIR="./tmp_spec_validator_$$"
+mkdir -p "$TMP_DIR"
+trap "rm -rf $TMP_DIR" EXIT
 
 # Prepare the full prompt
 FULL_PROMPT="$PROMPT_TEMPLATE
@@ -135,13 +162,12 @@ $SPEC_CONTENT"
 call_openai() {
     local model="$1"
     
-    # Debug: show request file location
-    if [[ -n "${DEBUG:-}" ]]; then
-        echo "Debug: Creating request at $TEMP_DIR/request.json" >&2
-    fi
+    # Escape the prompt content using jq to handle newlines and special characters
+    local escaped_prompt
+    escaped_prompt=$(echo "$FULL_PROMPT" | jq -Rs .)
     
-    # Create the request JSON
-    cat > "$TEMP_DIR/request.json" <<EOF
+    # Create the request JSON using heredoc
+    cat > "$TMP_DIR/request.json" <<EOF
 {
   "model": "$model",
   "messages": [
@@ -151,43 +177,28 @@ call_openai() {
     },
     {
       "role": "user",
-      "content": $(echo "$FULL_PROMPT" | jq -Rs .)
+      "content": $escaped_prompt
     }
   ],
   "temperature": 0.1
 }
 EOF
     
-    # Debug: check if file was created
-    if [[ -n "${DEBUG:-}" ]]; then
-        echo "Debug: Request file size: $(wc -c < "$TEMP_DIR/request.json") bytes" >&2
-        echo "Debug: First 200 chars of request: $(head -c 200 "$TEMP_DIR/request.json")" >&2
-    fi
-    
-    local response=$(curl -s -X POST https://api.openai.com/v1/chat/completions \
+    local response
+    response=$(curl -s -X POST https://api.openai.com/v1/chat/completions \
         -H "Content-Type: application/json" \
         -H "Authorization: Bearer $API_KEY" \
-        -d @"$TEMP_DIR/request.json")
-    
-    # Debug output
-    if [[ -n "${DEBUG:-}" ]]; then
-        echo "Debug: API Response: $response" >&2
-    fi
+        -d @"$TMP_DIR/request.json")
     
     # Check for errors
     if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
-        if [[ -n "${DEBUG:-}" ]]; then
-            echo "Debug: API Error: $(echo "$response" | jq -r '.error')" >&2
-        fi
         return 1
     fi
     
     # Extract the content
-    local content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
+    local content
+    content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
     if [[ -z "$content" ]]; then
-        if [[ -n "${DEBUG:-}" ]]; then
-            echo "Debug: No content in response" >&2
-        fi
         return 1
     fi
     echo "$content"
@@ -197,25 +208,30 @@ EOF
 call_anthropic() {
     local model="$1"
     
-    # Create the request JSON
-    cat > "$TEMP_DIR/request.json" <<EOF
+    # Escape the prompt content using jq
+    local escaped_prompt
+    escaped_prompt=$(echo "$FULL_PROMPT" | jq -Rs .)
+    
+    # Create the request JSON using heredoc
+    cat > "$TMP_DIR/request.json" <<EOF
 {
   "model": "$model",
   "max_tokens": 4096,
   "messages": [
     {
       "role": "user",
-      "content": $(echo "$FULL_PROMPT" | jq -Rs .)
+      "content": $escaped_prompt
     }
   ]
 }
 EOF
     
-    local response=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+    local response
+    response=$(curl -s -X POST https://api.anthropic.com/v1/messages \
         -H "Content-Type: application/json" \
         -H "x-api-key: $API_KEY" \
         -H "anthropic-version: 2023-06-01" \
-        -d @"$TEMP_DIR/request.json")
+        -d @"$TMP_DIR/request.json")
     
     # Check for errors
     if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
@@ -226,19 +242,19 @@ EOF
     echo "$response" | jq -r '.content[0].text // empty'
 }
 
-# Try models in preference order
+# Try models in preference order with API-model compatibility check
 RESULT=""
 MODEL_USED=""
 
 for model in "${MODEL_PREFERENCE[@]}"; do
+    # Skip Claude models when using OpenAI API and vice versa
     if [[ "$API_TYPE" == "anthropic" ]] && [[ "$model" == claude* ]]; then
-        if RESULT=$(call_anthropic "$model" 2>/dev/null); then
+        if RESULT=$(call_anthropic "$model" 2>/dev/null) && [[ -n "$RESULT" ]]; then
             MODEL_USED="$model"
             break
         fi
     elif [[ "$API_TYPE" == "openai" ]] && [[ "$model" == gpt* ]]; then
-        RESULT=$(call_openai "$model" 2>/dev/null)
-        if [[ -n "$RESULT" ]]; then
+        if RESULT=$(call_openai "$model" 2>/dev/null) && [[ -n "$RESULT" ]]; then
             MODEL_USED="$model"
             break
         fi
@@ -250,11 +266,13 @@ if [[ -z "$RESULT" ]]; then
 fi
 
 # Parse the JSON result
-# Remove markdown code blocks if present
+# Strip markdown code blocks from LLM responses before parsing
 CLEAN_RESULT=$(echo "$RESULT" | sed -e 's/^```json//' -e 's/^```//' -e 's/```$//')
-PARSED_RESULT=$(echo "$CLEAN_RESULT" | jq -c '.' 2>/dev/null || echo '{"status":"FAIL","model_used":"unknown","summary":{"pass":0,"warn":0,"fail":1},"failures":[{"line":0,"message":"Failed to parse API response"}],"warnings":[],"suggestions":[],"clarifying_questions":[]}')
 
-# Add model_used if not present
+# Provide fallback JSON structure for parse failures
+PARSED_RESULT=$(echo "$CLEAN_RESULT" | jq -c '.' 2>/dev/null || echo '{"status":"FAIL","model_used":"parse_error","summary":{"pass":0,"warn":0,"fail":1},"failures":[{"line":0,"message":"Failed to parse API response"}],"warnings":[],"suggestions":[],"clarifying_questions":[]}')
+
+# Add model_used metadata if not present
 if ! echo "$PARSED_RESULT" | jq -e '.model_used' >/dev/null 2>&1; then
     PARSED_RESULT=$(echo "$PARSED_RESULT" | jq --arg model "$MODEL_USED" '. + {model_used: $model}')
 fi
@@ -270,7 +288,11 @@ else
     WARN_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.warn // 0')
     FAIL_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.fail // 0')
     
-    echo -e "[VALIDATION] ${SPEC_FILE:-diff}"
+    if [[ "$DIFF_MODE" == true ]]; then
+        echo -e "[VALIDATION] $ROOT_SPEC_FILE (diff mode)"
+    else
+        echo -e "[VALIDATION] $SPEC_FILE"
+    fi
     echo -e "Status: $STATUS"
     echo -e "Model Used: $MODEL"
     echo
@@ -310,10 +332,7 @@ fi
 # Exit with appropriate code
 STATUS=$(echo "$PARSED_RESULT" | jq -r '.status // "FAIL"')
 case "$STATUS" in
-    PASS)
-        exit 0
-        ;;
-    WARN)
+    PASS|WARN)
         exit 0
         ;;
     FAIL)
