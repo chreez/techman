@@ -66,8 +66,9 @@ get_spec_version() {
 }
 
 commit_changes() {
-    local message="$1"
+    local change_type="$1"
     local spec_file="${2:-}"
+    local change_description="${3:-}"
     
     if [[ "${TECHMAN_NO_COMMIT:-0}" == "1" ]]; then
         log "🚫 Skipping Git commit (TECHMAN_NO_COMMIT=1)"
@@ -91,9 +92,37 @@ commit_changes() {
         return 0
     fi
     
-    # Commit
-    git commit -m "$message" > /dev/null 2>&1
-    log "📦 Committed: $message"
+    # Build commit message based on new format
+    local filename=$(basename "$spec_file")
+    local title=""
+    local body=""
+    
+    case "$change_type" in
+        "initial")
+            title="Spec Update: $filename - Initial specification"
+            body="Created new specification document with AI assistance"
+            ;;
+        "edit")
+            title="Spec Update: $filename - ${change_description:0:50}$([ ${#change_description} -gt 50 ] && echo '...')"
+            body="Applied AI-assisted edit: $change_description"
+            ;;
+        "fix")
+            title="Spec Update: $filename - Auto-fix validation issues"
+            body="Automatically fixed validation failures to ensure spec compliance"
+            ;;
+        "interactive")
+            title="Spec Update: $filename - Interactive session update"
+            body="Applied changes from interactive editing session: $change_description"
+            ;;
+        *)
+            title="Spec Update: $filename - Update"
+            body="$change_description"
+            ;;
+    esac
+    
+    # Commit with new format
+    git commit -m "$title" -m "" -m "$body" -m "" -m "🐛 Generated with Techman" > /dev/null 2>&1
+    log "📦 Committed: $title"
 }
 
 validate_and_fix() {
@@ -140,7 +169,7 @@ validate_and_fix() {
                     --ai-prompt="$fix_prompt" > /dev/null 2>&1; then
                     
                     # Commit the fix
-                    commit_changes "Auto-fix validation issues for $(basename "$spec_file")" "$spec_file"
+                    commit_changes "fix" "$spec_file"
                     
                     attempt=$((attempt + 1))
                 else
@@ -185,7 +214,7 @@ case "$MODE" in
             log "📄 Created: $SPEC_FILE"
             
             # Commit initial spec
-            commit_changes "Initial spec: $(basename "$SPEC_FILE")" "$SPEC_FILE"
+            commit_changes "initial" "$SPEC_FILE"
             
             # Validate and fix
             if validate_and_fix "$SPEC_FILE"; then
@@ -215,7 +244,7 @@ case "$MODE" in
             log "📄 Updated: $INPUT"
             
             # Commit the edit
-            commit_changes "AI edit: ${PROMPT:0:50}$([ ${#PROMPT} -gt 50 ] && echo '...')" "$INPUT"
+            commit_changes "edit" "$INPUT" "$PROMPT"
             
             # Validate and fix
             if validate_and_fix "$INPUT"; then
@@ -273,7 +302,7 @@ EOF
                 log "📄 Updated successfully"
                 
                 # Commit the change
-                commit_changes "Interactive session update: ${user_input:0:40}$([ ${#user_input} -gt 40 ] && echo '...')" "$INPUT"
+                commit_changes "interactive" "$INPUT" "$user_input"
                 
                 # Validate
                 validate_and_fix "$INPUT" || true
