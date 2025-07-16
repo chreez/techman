@@ -1,14 +1,14 @@
-```yaml
+```markdown
+---
 id: techman-workflow
-version: 0.7.0
+version: 0.8.0
 title: Techman Agentic Workflow
 description: Cozy, emoji-driven shell agent that creates, validates, and evolves structured specs using AI, Git, and natural prompts
 entry_points:
   - "bin/techman [semantic_input]"
   - "bin/techman [spec_file.md]"
   - "bin/techman spec.md --prompt [freeform prompt]"
-  status: active
-
+status: active
 ---
 
 ## 🧠 Goal
@@ -86,6 +86,9 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
   * `Auto-fix validation issues for foo.md`
   * `AI edit: added feature xyz`
   * `Interactive session update`
+  * Title format `Spec Update: {filename} - {change description}`
+  * Include a brief summary of changes in the body
+  * Use tagline `🐛 Generated with Techman` instead of `🤖 Generated with [Claude Code]`
 
 ### Input Types and Behavior
 
@@ -106,8 +109,11 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 
 ## 🔁 Changelog
 
-- **0.7.0** — 2025-07-16 — AI edit: Fix entry_points formatting to be a proper YAML list
+- **0.8.0** — 2025-07-16 — AI edit: Add commit message format requirements in Implementation Notes section: Title format 'Spec Update: {filename} - {change description}', include brief summary of changes in body, and use tagline '🐛 Generated with Techman' instead of '🤖 Generated with [Claude Code]'
 
+- **0.7.1** — 2025-07-16 — Add commit message format requirements to Implementation Notes
+
+- **0.7.0** — 2025-07-16 — AI edit: Fix entry_points formatting to be a proper YAML list
 - **0.6.2** — 2025-07-16 — Corrected entry_points format to a proper YAML list
 - **0.6.1** — 2025-07-16 — Test backup functionality
 * **0.6.0** — 2025-07-16 — Fixed spec-editor integration: AI now properly generates all required fields in non-interactive mode
