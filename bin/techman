@@ -1,0 +1,295 @@
+#!/bin/bash
+set -euo pipefail
+
+# Techman: Cozy, emoji-driven shell agent for structured spec workflow
+# Version: 0.5.0
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- Logging Functions ---
+log() {
+    echo "$@" >&2
+}
+
+# --- Argument Parsing ---
+PROMPT=""
+INPUT=""
+
+# Check for --prompt flag
+if [[ $# -gt 0 && "$1" == *.md && "${2:-}" == "--prompt" && -n "${3:-}" ]]; then
+    # spec.md --prompt "description"
+    INPUT="$1"
+    PROMPT="$3"
+elif [[ $# -gt 0 && "$1" == "--prompt" && -n "${2:-}" ]]; then
+    # --prompt "description" (error - need spec file)
+    log "❌ Error: --prompt requires a spec file"
+    log "💡 Usage: techman spec.md --prompt \"your change\""
+    exit 1
+elif [[ $# -gt 0 ]]; then
+    # Either semantic input or spec file
+    INPUT="$1"
+fi
+
+# --- Determine Mode ---
+MODE=""
+if [[ -z "$INPUT" ]]; then
+    log "❌ Error: No input provided"
+    log "💡 Usage:"
+    log "   techman \"Spec for login throttling\"        # Create new spec"
+    log "   techman spec.md                             # Interactive edit"
+    log "   techman spec.md --prompt \"add feature xyz\"  # Quick edit"
+    exit 1
+elif [[ "$INPUT" == *.md && -f "$INPUT" ]]; then
+    if [[ -n "$PROMPT" ]]; then
+        MODE="edit"
+    else
+        MODE="interactive"
+    fi
+elif [[ "$INPUT" == *.md && ! -f "$INPUT" ]]; then
+    log "❌ Error: Spec file not found: $INPUT"
+    exit 1
+else
+    # Semantic input
+    MODE="create"
+fi
+
+# --- Helper Functions ---
+get_spec_id() {
+    local spec_file="$1"
+    grep "^id:" "$spec_file" | head -1 | sed 's/^id: *//'
+}
+
+get_spec_version() {
+    local spec_file="$1"
+    grep "^version:" "$spec_file" | head -1 | sed 's/^version: *//'
+}
+
+commit_changes() {
+    local message="$1"
+    local spec_file="${2:-}"
+    
+    if [[ "${TECHMAN_NO_COMMIT:-0}" == "1" ]]; then
+        log "🚫 Skipping Git commit (TECHMAN_NO_COMMIT=1)"
+        return 0
+    fi
+    
+    # Check if we're in a git repo
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        log "🚫 Not in a Git repository, skipping commit"
+        return 0
+    fi
+    
+    # Stage the spec file if provided
+    if [[ -n "$spec_file" && -f "$spec_file" ]]; then
+        git add "$spec_file"
+    fi
+    
+    # Check if there are changes to commit
+    if git diff --cached --quiet; then
+        log "🚫 No changes to commit"
+        return 0
+    fi
+    
+    # Commit
+    git commit -m "$message" > /dev/null 2>&1
+    log "📦 Committed: $message"
+}
+
+validate_and_fix() {
+    local spec_file="$1"
+    local max_attempts=5
+    local attempt=1
+    
+    while [[ $attempt -le $max_attempts ]]; do
+        log "🧠 Validating spec (attempt $attempt/$max_attempts)..."
+        
+        # Run validator
+        local validation_output
+        validation_output=$("$SCRIPT_DIR/spec-validator" --json "$spec_file" 2>/dev/null) || true
+        
+        # Parse the status from JSON
+        local status
+        status=$(echo "$validation_output" | grep '"status"' | head -1 | sed 's/.*"status": *"\([^"]*\)".*/\1/')
+        
+        case "$status" in
+            "PASS")
+                log "✅ Validation passed!"
+                return 0
+                ;;
+            "WARN")
+                log "⚠️  Validation has warnings, but proceeding..."
+                return 0
+                ;;
+            "FAIL"|"")
+                log "🐛 Validation failed, attempting auto-fix..."
+                
+                # Extract issues from JSON
+                local issues
+                issues=$(echo "$validation_output" | grep -A 100 '"issues"' | grep '"message"' | sed 's/.*"message": *"\([^"]*\)".*/\1/' | head -5)
+                
+                # Create a fix prompt
+                local fix_prompt="Fix these validation issues:\n$issues"
+                
+                # Use spec-editor to fix
+                log "🔁 Auto-fixing validation issues..."
+                if "$SCRIPT_DIR/spec-editor" update "$spec_file" --no-interactive \
+                    --ai-assist \
+                    --patch \
+                    --changelog="Auto-fix validation issues" \
+                    --ai-prompt="$fix_prompt" > /dev/null 2>&1; then
+                    
+                    # Commit the fix
+                    commit_changes "Auto-fix validation issues for $(basename "$spec_file")" "$spec_file"
+                    
+                    attempt=$((attempt + 1))
+                else
+                    log "❌ Auto-fix failed"
+                    return 1
+                fi
+                ;;
+        esac
+    done
+    
+    log "❌ Maximum fix attempts reached"
+    return 1
+}
+
+# --- Main Workflow ---
+case "$MODE" in
+    "create")
+        log "✨ Creating new spec from: \"$INPUT\""
+        
+        # Generate a spec ID from the semantic input
+        SPEC_ID=$(echo "$INPUT" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+        SPEC_FILE="specs/${SPEC_ID}.md"
+        
+        # Check if spec already exists
+        if [[ -f "$SPEC_FILE" ]]; then
+            log "❌ Spec already exists: $SPEC_FILE"
+            log "💡 Use 'techman $SPEC_FILE' to edit it"
+            exit 1
+        fi
+        
+        # Create directory if needed
+        mkdir -p specs
+        
+        # Use spec-editor to create with AI assistance
+        log "🧠 Generating spec with AI assistance..."
+        if "$SCRIPT_DIR/spec-editor" create "$SPEC_FILE" \
+            --no-interactive \
+            --ai-assist \
+            --id="$SPEC_ID" \
+            --title="$INPUT" > /dev/null 2>&1; then
+            
+            log "📄 Created: $SPEC_FILE"
+            
+            # Commit initial spec
+            commit_changes "Initial spec: $(basename "$SPEC_FILE")" "$SPEC_FILE"
+            
+            # Validate and fix
+            if validate_and_fix "$SPEC_FILE"; then
+                echo "$SPEC_FILE"
+            else
+                log "❌ Failed to create valid spec"
+                exit 1
+            fi
+        else
+            log "❌ Failed to create spec"
+            exit 1
+        fi
+        ;;
+        
+    "edit")
+        log "✨ Editing spec with prompt: \"$PROMPT\""
+        log "📄 Target: $INPUT"
+        
+        # Use spec-editor to update with AI assistance
+        log "🧠 Applying AI edit..."
+        if "$SCRIPT_DIR/spec-editor" update "$INPUT" --no-interactive \
+            --ai-assist \
+            --minor \
+            --changelog="AI edit: $PROMPT" \
+            --ai-prompt="$PROMPT" 2>&1; then
+            
+            log "📄 Updated: $INPUT"
+            
+            # Commit the edit
+            commit_changes "AI edit: ${PROMPT:0:50}$([ ${#PROMPT} -gt 50 ] && echo '...')" "$INPUT"
+            
+            # Validate and fix
+            if validate_and_fix "$INPUT"; then
+                echo "$INPUT"
+            else
+                log "❌ Edit resulted in invalid spec"
+                exit 1
+            fi
+        else
+            log "❌ Failed to apply edit"
+            exit 1
+        fi
+        ;;
+        
+    "interactive")
+        log "✨ Starting interactive session for: $INPUT"
+        
+        # Create session tracking directory
+        mkdir -p .techman
+        SESSION_FILE=".techman/session.json"
+        SESSION_ID="session-$(date +%s)"
+        
+        # Initialize session
+        cat > "$SESSION_FILE" <<EOF
+{
+  "id": "$SESSION_ID",
+  "spec": "$INPUT",
+  "started": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "mode": "interactive"
+}
+EOF
+        
+        log "💡 Interactive mode started (session: $SESSION_ID)"
+        log "💡 Enter your changes when prompted. Type 'done' to finish."
+        log ""
+        
+        # Interactive loop
+        while true; do
+            log -n "💡 Enter change (or 'done' to finish): "
+            read -r user_input
+            
+            if [[ "$user_input" == "done" || -z "$user_input" ]]; then
+                log "✨ Ending interactive session"
+                break
+            fi
+            
+            # Apply the change
+            log "🧠 Applying change: \"$user_input\""
+            if "$SCRIPT_DIR/spec-editor" update "$INPUT" --no-interactive \
+                --ai-assist \
+                --major \
+                --changelog="Interactive update: $user_input" \
+                --ai-prompt="$user_input" > /dev/null 2>&1; then
+                
+                log "📄 Updated successfully"
+                
+                # Commit the change
+                commit_changes "Interactive session update: ${user_input:0:40}$([ ${#user_input} -gt 40 ] && echo '...')" "$INPUT"
+                
+                # Validate
+                validate_and_fix "$INPUT" || true
+            else
+                log "❌ Failed to apply change"
+            fi
+            
+            log ""
+        done
+        
+        # Final validation
+        if validate_and_fix "$INPUT"; then
+            echo "$SESSION_ID"
+        else
+            log "⚠️  Session ended with validation issues"
+            echo "$SESSION_ID"
+        fi
+        ;;
+esac

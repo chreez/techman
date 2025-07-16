@@ -79,6 +79,10 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 
 ## 🛠️ Implementation Notes
 
+### Known Integration Issues
+
+* **spec-editor AI generation**: When creating new specs with `--ai-assist` in non-interactive mode, the AI content generation for `description` and `entry_points` fields may not populate correctly, resulting in empty fields that fail validation. The auto-fix loop attempts to correct this but may require multiple iterations.
+
 ### Atomic Workflow Commit Policy
 
 * Every meaningful change is committed (initial + follow-up)
