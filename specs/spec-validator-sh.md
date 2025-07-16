@@ -1,9 +1,9 @@
 ---
 
-id: spec-validator-bash
-version: 0.5.0
+id: spec-validator-cli-bash
+version: 0.5.1
 title: Spec Validator CLI (Bash)
-status: draft
+status: active
 entry_points:
   - bin/spec-validator
   - scripts/spec-validate.sh  
@@ -29,6 +29,7 @@ Enable fast, local spec validation through a CLI wrapper that leverages remote L
   - Optionally saves to disk or pipes to next tool
   - Accepts git diff (via stdin or file) to focus validation scope
   - ⚠️ Only applies validation to diff content within recognized spec files
+  - 🔗 When using diff mode, requires the original root spec file to be provided for context
   - Uses local context:
     - The spec file itself
     - Git diff (optional)
@@ -42,10 +43,11 @@ Enable fast, local spec validation through a CLI wrapper that leverages remote L
   • Returns results in JSON or human-readable format
   • Fails gracefully with error output if file is invalid or model API fails
   • Ignores non-spec diffs when parsing git diff
+  • When using diff mode with a root file, validates changes in context of the full spec
   • Agent can use tool by piping staged spec changes:
 
 ```bash
-git diff --cached specs/ | ./bin/spec-validator --diff - > result.json
+git diff --cached specs/ | ./bin/spec-validator --diff - specs/target-spec.md > result.json
 ```
 
 ## 📤 Output Format
@@ -153,7 +155,13 @@ git diff HEAD^ HEAD -- specs/ | ./bin/spec-validator --diff -
 - Use `$(dirname "$0")/../specs/` for relative path resolution
 - Ensures spec validator finds reference files regardless of working directory
 
+### Diff Mode with Root File
+- When `--diff` is used with a root spec file, combine diff content with original file for complete context
+- This enables validation of changes against the full specification structure
+- Root file provides necessary context for understanding the scope and impact of changes
+
 ## 🔁 Changelog
+  - 0.5.1 — Added requirement for root file when using diff mode to provide complete validation context
   - 0.5.0 — Added implementation guidance for JSON escaping, markdown stripping, API-model compatibility, and relative path resolution
   - 0.4.4 — Added model_used metadata to outputs; defined preferred LLMs based on real-time evaluation research; standardized bin directory usage
   - 0.4.3 — Canonicalized bin/ as primary executable directory; updated usage examples
