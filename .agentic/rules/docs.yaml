@@ -1,9 +1,0 @@
-- type: ALWAYS
-  name: Keep Docs Updated
-  note: README and guides should reflect current behavior.
-- type: ALWAYS
-  name: Markdown Format
-  note: Write documentation in Markdown.
-- type: NEVER
-  name: Document TODOs
-  note: Resolve placeholders before merging.

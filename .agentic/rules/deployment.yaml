@@ -1,9 +1,0 @@
-- type: ALWAYS
-  name: Use Env Variables
-  note: Deployment configuration should rely on environment variables.
-- type: ALWAYS
-  name: Document Steps
-  note: Provide clear deployment instructions for web and backend.
-- type: NEVER
-  name: Commit Builds
-  note: Do not commit generated build artifacts.
