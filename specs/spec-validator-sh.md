@@ -1,24 +1,18 @@
 ---
 
-id: spec-validator-bash
-version: 0.4.0
-title: Spec Validator CLI (Bash)
-status: draft
-entry\_points:
+id: spec-validator-bash version: 0.4.1 title: Spec Validator CLI (Bash) status: draft entry\_points:
 
 * scripts/spec-validate.sh
 * bin/spec-validator
 * run via: `./spec-validate.sh path/to/spec.md`
-  description: >
-  Defines a Bash-based CLI tool that validates a spec file against the core spec-validator logic.
-  Designed for lightweight execution using Claude or OpenAI APIs and basic shell utilities.
+
+description: > Defines a Bash-based CLI tool that validates a spec file against the core spec-validator logic. Designed for lightweight execution using Claude or OpenAI APIs and basic shell utilities.
 
 ---
 
 ## 🧠 Goal
 
-Enable fast, local spec validation through a CLI wrapper that leverages remote LLMs and shell parsing.
-Supports Markdown spec files and produces structured validation output for downstream agents.
+Enable fast, local spec validation through a CLI wrapper that leverages remote LLMs and shell parsing. Supports Markdown spec files and produces structured validation output for downstream agents.
 
 ## ⚙️ Functionality
 
@@ -31,6 +25,8 @@ Supports Markdown spec files and produces structured validation output for downs
 * Receives structured `PASS | WARN | FAIL` + recommendations (JSON)
 * Optionally saves to disk or pipes to next tool
 * Accepts `git diff` (via stdin or file) to focus validation scope
+
+  * ⚠️ Only applies validation to diff content **within recognized spec files**
 * Uses local context:
 
   * The spec file itself
@@ -43,10 +39,11 @@ Supports Markdown spec files and produces structured validation output for downs
 * CLI runs without error given valid API key and input file
 * Returns results in JSON or human-readable format
 * Fails gracefully with error output if file is invalid or model API fails
-* Agent can use tool by piping staged changes:
+* Ignores non-spec diffs when parsing `git diff`
+* Agent can use tool by piping staged spec changes:
 
 ```bash
-git diff --cached | ./spec-validate.sh --diff - > result.json
+git diff --cached specs/ | ./spec-validate.sh --diff - > result.json
 ```
 
 ## 📤 Output Format
@@ -123,11 +120,12 @@ cat result.json | jq
 or with diff input:
 
 ```bash
-git diff HEAD^ HEAD | ./spec-validate.sh --diff -
+git diff HEAD^ HEAD -- specs/ | ./spec-validate.sh --diff -
 ```
 
 ## 🔁 Changelog
 
+* 0.4.1 — Clarified that diff input must only include spec file changes; stricter filtering of input scope
 * 0.4.0 — Added support for hardcoded reference context and promptTemplate; CLI acts as GPT-facing shim
 * 0.3.0 — Defined output format with error levels, clarified FAIL vs WARN intent
 * 0.2.0 — Added support for `git diff` input and agent usability requirement
