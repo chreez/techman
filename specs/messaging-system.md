@@ -1,6 +1,6 @@
 ---
 id: messaging-system
-version: 0.1.1
+version: 0.1.2
 title: Messaging System
 status: draft
 entry_points:
@@ -22,5 +22,7 @@ Create a messaging system.
 
 TBD
 ## 🔁 Changelog
+
+- **0.1.2** — 2025-07-16 — Auto-fix validation issues: Fixed failures. {"line":1,"message":"The 'id' field is present but should be checked for uniqueness and proper formatting."}
 
 - **0.1.1** — 2025-07-16 — 
