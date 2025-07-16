@@ -136,7 +136,8 @@ trap "rm -rf $TMP_DIR" EXIT
 # Read the spec content
 SPEC_CONTENT=""
 if [[ "$TEST_LLM" == true ]]; then
-    SPEC_CONTENT="Test spec for LLM connectivity"
+    # For test mode, we'll use the actual spec content but with a different prompt
+    SPEC_CONTENT=$(cat "$SPEC_FILE" 2>/dev/null || echo "Test spec for LLM connectivity")
 elif [[ "$DIFF_MODE" == true ]]; then
     if [[ "$DIFF_FILE" == "-" ]]; then
         DIFF_CONTENT=$(cat)
@@ -185,13 +186,21 @@ fi
 PROMPT_TEMPLATE=$(cat "$PROMPT_TEMPLATE_PATH")
 
 # Prepare the full prompt
-FULL_PROMPT="$PROMPT_TEMPLATE
+if [[ "$TEST_LLM" == true ]]; then
+    # Test mode uses a different prompt to verify LLM connectivity
+    FULL_PROMPT="Please provide a summary of the content you received in less than 300 words. The input context is:
+
+$SPEC_CONTENT"
+else
+    # Normal validation mode
+    FULL_PROMPT="$PROMPT_TEMPLATE
 
 Reference Spec Validator Specification:
 $SPEC_VALIDATOR_SPEC
 
 Spec to validate:
 $SPEC_CONTENT"
+fi
 
 if [[ "$DRY_RUN" == true ]]; then
     echo "=== PROMPT THAT WOULD BE SENT ==="
@@ -211,13 +220,20 @@ call_openai() {
     escaped_prompt=$(echo "$FULL_PROMPT" | jq -Rs .)
     
     # Create the request JSON using heredoc
+    local system_message
+    if [[ "$TEST_LLM" == true ]]; then
+        system_message="You are a helpful assistant. Provide a clear, concise summary as requested."
+    else
+        system_message="You are a Spec Validator. Always respond with valid JSON only. Do not include any markdown formatting or code blocks in your response."
+    fi
+    
     cat > "$TMP_DIR/request.json" <<EOF
 {
   "model": "$model",
   "messages": [
     {
       "role": "system",
-      "content": "You are a Spec Validator. Always respond with valid JSON only. Do not include any markdown formatting or code blocks in your response."
+      "content": "$system_message"
     },
     {
       "role": "user",
@@ -259,7 +275,13 @@ call_anthropic() {
     
     # Escape the prompt content using jq
     local escaped_prompt
-    escaped_prompt=$(echo "$FULL_PROMPT" | jq -Rs .)
+    if [[ "$TEST_LLM" == true ]]; then
+        escaped_prompt=$(echo "You are a helpful assistant. Provide a clear, concise summary as requested.
+
+$FULL_PROMPT" | jq -Rs .)
+    else
+        escaped_prompt=$(echo "$FULL_PROMPT" | jq -Rs .)
+    fi
     
     # Create the request JSON using heredoc
     cat > "$TMP_DIR/request.json" <<EOF
@@ -337,11 +359,10 @@ if [[ "$TEST_LLM" == true ]]; then
     echo "Response Length: $(echo "$RESULT" | wc -c) characters"
     echo "Status: SUCCESS"
     echo
-    echo "Raw Response Preview:"
-    echo "$RESULT" | head -n 5
-    if [[ $(echo "$RESULT" | wc -l) -gt 5 ]]; then
-        echo "... (truncated)"
-    fi
+    echo "Content Summary Response:"
+    echo "------------------------"
+    echo "$RESULT"
+    echo "------------------------"
     exit 0
 fi
 

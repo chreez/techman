@@ -1,6 +1,6 @@
 ---
 id: spec-validator-cli-bash
-version: 0.5.3
+version: 0.5.4
 title: Spec Validator CLI (Bash)
 status: active
 entry_points:
@@ -197,8 +197,10 @@ The `--test-llm` command provides verbose output including:
 - Available model preference order
 - Model successfully used for the test
 - Response length statistics
-- Preview of raw LLM response
+- Full content summary response (uses different prompt than validation)
 - Overall test status
+
+Note: Test mode uses a content summary prompt rather than validation to verify LLM connectivity without requiring JSON parsing.
 
 ## 🛠️ Implementation Notes
 
@@ -267,6 +269,7 @@ fi
 ```
 
 ## 🔁 Changelog
+  - 0.5.4 — Modified --test-llm to use content summary prompt instead of validation, providing clearer test output and avoiding JSON parsing requirements
   - 0.5.3 — Enhanced --test-llm command with verbose output including API type, model preference, response statistics, and raw response preview
   - 0.5.2 — Added debugging workflow, null value handling, and LLM integration testing procedures
   - 0.5.1 — Added requirement for root file when using diff mode to provide complete validation context
