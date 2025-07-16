@@ -2,24 +2,23 @@
 
 set -euo pipefail
 
-# Color codes for output
-RED='\033[0;31m'
-YELLOW='\033[0;33m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
-
 # Default values
 JSON_OUTPUT=false
 DIFF_MODE=false
 DIFF_FILE=""
 ROOT_SPEC_FILE=""
+SPEC_FILE=""
+DEBUG=${DEBUG:-0}
+TEST_LLM=false
+DRY_RUN=false
+
+# Model preference based on spec v0.5.2
 MODEL_PREFERENCE=("claude-3-5-sonnet-20241022" "gpt-4o-2024-08-06" "gpt-4-turbo-2024-04-09")
 
-# Usage function
 usage() {
-    cat << EOF
-Usage: $0 [OPTIONS] <spec_file>
-       $0 [OPTIONS] --diff <diff_file> <root_spec_file>
+    cat << 'EOF'
+Usage: spec-validator [OPTIONS] <spec_file>
+       spec-validator [OPTIONS] --diff <diff_file> <root_spec_file>
 
 Validates a spec file against the core spec-validator logic using Claude or OpenAI APIs.
 
@@ -27,24 +26,31 @@ OPTIONS:
     --json          Output results in JSON format
     --diff <file>   Validate only the diff content (use '-' for stdin)
                     When using --diff, a root spec file is REQUIRED for context
+    --test-llm      Test LLM integration
+    --dry-run       Show prompt without calling LLM
     -h, --help      Show this help message
 
 REQUIRED:
     Either ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable must be set.
 
 EXAMPLES:
-    $0 specs/example.md
-    $0 --json specs/example.md > result.json
-    git diff --cached specs/ | $0 --diff - specs/target-spec.md
-    $0 --diff changes.patch specs/my-feature.md
+    spec-validator specs/example.md
+    spec-validator --json specs/example.md > result.json
+    git diff --cached specs/ | spec-validator --diff - specs/target-spec.md
+    spec-validator --diff changes.patch specs/my-feature.md
 EOF
     exit 1
 }
 
-# Error handling
 error() {
-    echo -e "${RED}Error: $1${NC}" >&2
+    echo "Error: $1" >&2
     exit 1
+}
+
+debug() {
+    if [[ "$DEBUG" == "1" ]]; then
+        echo "[DEBUG] $1" >&2
+    fi
 }
 
 # Parse command line arguments
@@ -58,6 +64,14 @@ while [[ $# -gt 0 ]]; do
             DIFF_MODE=true
             DIFF_FILE="$2"
             shift 2
+            ;;
+        --test-llm)
+            TEST_LLM=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
             ;;
         -h|--help)
             usage
@@ -77,7 +91,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required inputs
-if [[ "$DIFF_MODE" == true ]]; then
+if [[ "$TEST_LLM" == true ]]; then
+    # Test mode - just verify API connectivity
+    echo "Testing LLM integration..."
+elif [[ "$DIFF_MODE" == true ]]; then
     if [[ -z "$DIFF_FILE" ]]; then
         error "Diff file required when using --diff mode"
     fi
@@ -88,7 +105,7 @@ if [[ "$DIFF_MODE" == true ]]; then
         error "Root spec file not found: $ROOT_SPEC_FILE"
     fi
 else
-    if [[ -z "${SPEC_FILE:-}" ]]; then
+    if [[ -z "$SPEC_FILE" ]]; then
         error "Spec file path is required"
     fi
     if [[ ! -f "$SPEC_FILE" ]]; then
@@ -97,6 +114,8 @@ else
 fi
 
 # Check for API keys
+API_TYPE=""
+API_KEY=""
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
     API_TYPE="anthropic"
     API_KEY="$ANTHROPIC_API_KEY"
@@ -107,23 +126,36 @@ else
     error "Either ANTHROPIC_API_KEY or OPENAI_API_KEY must be set"
 fi
 
+debug "API Type: $API_TYPE"
+
+# Create a temporary directory (working directory, not system /tmp)
+TMP_DIR="./tmp_spec_validator_$$"
+mkdir -p "$TMP_DIR"
+trap "rm -rf $TMP_DIR" EXIT
+
 # Read the spec content
-if [[ "$DIFF_MODE" == true ]]; then
+SPEC_CONTENT=""
+if [[ "$TEST_LLM" == true ]]; then
+    SPEC_CONTENT="Test spec for LLM connectivity"
+elif [[ "$DIFF_MODE" == true ]]; then
     if [[ "$DIFF_FILE" == "-" ]]; then
         DIFF_CONTENT=$(cat)
     else
         DIFF_CONTENT=$(cat "$DIFF_FILE")
     fi
     
-    # Extract spec file paths from diff and verify they match our root file
+    # Extract spec file paths from diff and verify they contain spec files
     SPEC_FILES=$(echo "$DIFF_CONTENT" | awk '/^(diff --git|---|\+\+\+)/ && /\.(md|yaml|yml)/ {
         gsub(/^(diff --git a\/|---|\\+\\+\\+\s+[ab]\/)/, "");
+        gsub(/\t.*$/, "");
         print
     }' | sort -u)
     
     if [[ -z "$SPEC_FILES" ]]; then
         error "No spec files found in diff"
     fi
+    
+    debug "Found spec files in diff: $SPEC_FILES"
     
     # Read the root spec file for context
     ROOT_CONTENT=$(cat "$ROOT_SPEC_FILE")
@@ -139,15 +171,18 @@ else
 fi
 
 # Read the reference spec validator spec
-SPEC_VALIDATOR_SPEC=$(cat "$(dirname "$0")/../specs/spec-validator.md")
+SPEC_VALIDATOR_SPEC_PATH="$(dirname "$0")/../specs/spec-validator.md"
+if [[ ! -f "$SPEC_VALIDATOR_SPEC_PATH" ]]; then
+    error "Reference spec validator specification not found at: $SPEC_VALIDATOR_SPEC_PATH"
+fi
+SPEC_VALIDATOR_SPEC=$(cat "$SPEC_VALIDATOR_SPEC_PATH")
 
 # Read the prompt template
-PROMPT_TEMPLATE=$(cat "$(dirname "$0")/../scripts/promptTemplate-GPT.sh")
-
-# Create a temporary directory for the request (working directory, not system /tmp)
-TMP_DIR="./tmp_spec_validator_$$"
-mkdir -p "$TMP_DIR"
-trap "rm -rf $TMP_DIR" EXIT
+PROMPT_TEMPLATE_PATH="$(dirname "$0")/../scripts/promptTemplate-GPT.sh"
+if [[ ! -f "$PROMPT_TEMPLATE_PATH" ]]; then
+    error "Prompt template not found at: $PROMPT_TEMPLATE_PATH"
+fi
+PROMPT_TEMPLATE=$(cat "$PROMPT_TEMPLATE_PATH")
 
 # Prepare the full prompt
 FULL_PROMPT="$PROMPT_TEMPLATE
@@ -158,9 +193,18 @@ $SPEC_VALIDATOR_SPEC
 Spec to validate:
 $SPEC_CONTENT"
 
+if [[ "$DRY_RUN" == true ]]; then
+    echo "=== PROMPT THAT WOULD BE SENT ==="
+    echo "$FULL_PROMPT"
+    exit 0
+fi
+
+debug "Prompt length: $(echo "$FULL_PROMPT" | wc -c) characters"
+
 # Function to call OpenAI API
 call_openai() {
     local model="$1"
+    debug "Calling OpenAI API with model: $model"
     
     # Escape the prompt content using jq to handle newlines and special characters
     local escaped_prompt
@@ -173,7 +217,7 @@ call_openai() {
   "messages": [
     {
       "role": "system",
-      "content": "You are a Spec Validator. Always respond with valid JSON."
+      "content": "You are a Spec Validator. Always respond with valid JSON only. Do not include any markdown formatting or code blocks in your response."
     },
     {
       "role": "user",
@@ -190,8 +234,11 @@ EOF
         -H "Authorization: Bearer $API_KEY" \
         -d @"$TMP_DIR/request.json")
     
+    debug "OpenAI response received"
+    
     # Check for errors
     if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
+        debug "OpenAI API error: $(echo "$response" | jq -r '.error.message')"
         return 1
     fi
     
@@ -199,6 +246,7 @@ EOF
     local content
     content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
     if [[ -z "$content" ]]; then
+        debug "Empty content from OpenAI response"
         return 1
     fi
     echo "$content"
@@ -207,6 +255,7 @@ EOF
 # Function to call Anthropic API
 call_anthropic() {
     local model="$1"
+    debug "Calling Anthropic API with model: $model"
     
     # Escape the prompt content using jq
     local escaped_prompt
@@ -233,8 +282,11 @@ EOF
         -H "anthropic-version: 2023-06-01" \
         -d @"$TMP_DIR/request.json")
     
+    debug "Anthropic response received"
+    
     # Check for errors
     if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
+        debug "Anthropic API error: $(echo "$response" | jq -r '.error.message')"
         return 1
     fi
     
@@ -247,86 +299,119 @@ RESULT=""
 MODEL_USED=""
 
 for model in "${MODEL_PREFERENCE[@]}"; do
-    # Skip Claude models when using OpenAI API and vice versa
+    debug "Trying model: $model"
+    
+    # Skip models that don't match the API type
     if [[ "$API_TYPE" == "anthropic" ]] && [[ "$model" == claude* ]]; then
         if RESULT=$(call_anthropic "$model" 2>/dev/null) && [[ -n "$RESULT" ]]; then
             MODEL_USED="$model"
+            debug "Successfully used model: $model"
             break
         fi
     elif [[ "$API_TYPE" == "openai" ]] && [[ "$model" == gpt* ]]; then
         if RESULT=$(call_openai "$model" 2>/dev/null) && [[ -n "$RESULT" ]]; then
             MODEL_USED="$model"
+            debug "Successfully used model: $model"
             break
         fi
     fi
+    debug "Model $model failed or incompatible with API type $API_TYPE"
 done
 
 if [[ -z "$RESULT" ]]; then
-    error "Failed to get response from API"
+    error "Failed to get response from any compatible model"
 fi
 
-# Parse the JSON result
+if [[ "$DEBUG" == "1" ]]; then
+    echo "[DEBUG] Raw LLM response:" >&2
+    echo "$RESULT" >&2
+    echo "[DEBUG] End raw response" >&2
+fi
+
+# Handle test mode
+if [[ "$TEST_LLM" == true ]]; then
+    echo "=== LLM Integration Test ==="
+    echo "API Type: $API_TYPE"
+    echo "Available Models: ${MODEL_PREFERENCE[*]}"
+    echo "Model Used: $MODEL_USED"
+    echo "Response Length: $(echo "$RESULT" | wc -c) characters"
+    echo "Status: SUCCESS"
+    echo
+    echo "Raw Response Preview:"
+    echo "$RESULT" | head -n 5
+    if [[ $(echo "$RESULT" | wc -l) -gt 5 ]]; then
+        echo "... (truncated)"
+    fi
+    exit 0
+fi
+
 # Strip markdown code blocks from LLM responses before parsing
 CLEAN_RESULT=$(echo "$RESULT" | sed -e 's/^```json//' -e 's/^```//' -e 's/```$//')
 
 # Provide fallback JSON structure for parse failures
 PARSED_RESULT=$(echo "$CLEAN_RESULT" | jq -c '.' 2>/dev/null || echo '{"status":"FAIL","model_used":"parse_error","summary":{"pass":0,"warn":0,"fail":1},"failures":[{"line":0,"message":"Failed to parse API response"}],"warnings":[],"suggestions":[],"clarifying_questions":[]}')
 
-# Add model_used metadata if not present
-if ! echo "$PARSED_RESULT" | jq -e '.model_used' >/dev/null 2>&1; then
-    PARSED_RESULT=$(echo "$PARSED_RESULT" | jq --arg model "$MODEL_USED" '. + {model_used: $model}')
-fi
+# Ensure model_used metadata is correct (overwrite LLM response)
+PARSED_RESULT=$(echo "$PARSED_RESULT" | jq --arg model "$MODEL_USED" '.model_used = $model')
+
+# Handle null values in JSON responses - replace with meaningful defaults
+PARSED_RESULT=$(echo "$PARSED_RESULT" | jq '
+    .failures[] |= (if .message == null then .message = "Details unavailable" else . end) |
+    .warnings[] |= (if .message == null then .message = "Warning details unavailable" else . end) |
+    .suggestions[] |= (if .text == null then .text = "Suggestion details unavailable" else . end) |
+    .clarifying_questions |= map(if . == null then "Question details unavailable" else . end)
+')
 
 # Output results
 if [[ "$JSON_OUTPUT" == true ]]; then
     echo "$PARSED_RESULT" | jq '.'
 else
     # Human-readable output
-    STATUS=$(echo "$PARSED_RESULT" | jq -r '.status')
-    MODEL=$(echo "$PARSED_RESULT" | jq -r '.model_used')
+    STATUS=$(echo "$PARSED_RESULT" | jq -r '.status // "UNKNOWN"')
+    MODEL=$(echo "$PARSED_RESULT" | jq -r '.model_used // "unknown"')
     PASS_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.pass // 0')
     WARN_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.warn // 0')
     FAIL_COUNT=$(echo "$PARSED_RESULT" | jq -r '.summary.fail // 0')
     
     if [[ "$DIFF_MODE" == true ]]; then
-        echo -e "[VALIDATION] $ROOT_SPEC_FILE (diff mode)"
+        echo "[VALIDATION] $ROOT_SPEC_FILE (diff mode)"
     else
-        echo -e "[VALIDATION] $SPEC_FILE"
+        echo "[VALIDATION] $SPEC_FILE"
     fi
-    echo -e "Status: $STATUS"
-    echo -e "Model Used: $MODEL"
+    echo "Status: $STATUS"
+    echo "Model Used: $MODEL"
     echo
     
     # Failures
     if [[ $(echo "$PARSED_RESULT" | jq -r '.failures | length') -gt 0 ]]; then
-        echo -e "${RED}Failures (requires human review):${NC}"
-        echo "$PARSED_RESULT" | jq -r '.failures[] | "- Line \(.line): \(.message)"'
+        echo "Failures (requires human review):"
+        echo "$PARSED_RESULT" | jq -r '.failures[] | "- Line \(.line // 0): \(.message // "Details unavailable")"'
         echo
     fi
     
     # Warnings
     if [[ $(echo "$PARSED_RESULT" | jq -r '.warnings | length') -gt 0 ]]; then
-        echo -e "${YELLOW}Warnings (agent-fixable):${NC}"
-        echo "$PARSED_RESULT" | jq -r '.warnings[] | "- Line \(.line): \(.message)"'
+        echo "Warnings (agent-fixable):"
+        echo "$PARSED_RESULT" | jq -r '.warnings[] | "- Line \(.line // 0): \(.message // "Warning details unavailable")"'
         echo
     fi
     
     # Suggestions
     if [[ $(echo "$PARSED_RESULT" | jq -r '.suggestions | length') -gt 0 ]]; then
-        echo -e "Suggestions:"
-        echo "$PARSED_RESULT" | jq -r '.suggestions[] | "- [\(.level)] \(.text)"'
+        echo "Suggestions:"
+        echo "$PARSED_RESULT" | jq -r '.suggestions[] | "- [\(.level // "INFO")] \(.text // "Suggestion details unavailable")"'
         echo
     fi
     
     # Clarifying questions
     if [[ $(echo "$PARSED_RESULT" | jq -r '.clarifying_questions | length') -gt 0 ]]; then
-        echo -e "Clarifying Questions:"
-        echo "$PARSED_RESULT" | jq -r '.clarifying_questions[] | "- \(.)"'
+        echo "Clarifying Questions:"
+        echo "$PARSED_RESULT" | jq -r '.clarifying_questions[] | "- \(. // "Question details unavailable")"'
         echo
     fi
     
-    echo -e "Summary:"
-    echo -e "${GREEN}PASS: $PASS_COUNT${NC} | ${YELLOW}WARN: $WARN_COUNT${NC} | ${RED}FAIL: $FAIL_COUNT${NC}"
+    echo "Summary:"
+    echo "PASS: $PASS_COUNT | WARN: $WARN_COUNT | FAIL: $FAIL_COUNT"
 fi
 
 # Exit with appropriate code

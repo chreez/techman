@@ -1,6 +1,6 @@
 ---
 id: spec-validator-cli-bash
-version: 0.5.2
+version: 0.5.3
 title: Spec Validator CLI (Bash)
 status: active
 entry_points:
@@ -182,15 +182,23 @@ echo '{"status":"PASS","warnings":[{"line":5,"message":"test"}]}' | jq .
 ### LLM Integration Testing
 
 ```bash
-# Test OpenAI integration
+# Test OpenAI integration (verbose output)
 OPENAI_API_KEY=your-key ./bin/spec-validator --test-llm
 
-# Test Anthropic integration  
+# Test Anthropic integration (verbose output)
 ANTHROPIC_API_KEY=your-key ./bin/spec-validator --test-llm
 
 # Verify response parsing with known inputs
 ./bin/spec-validator --dry-run specs/example.md > expected-prompt.txt
 ```
+
+The `--test-llm` command provides verbose output including:
+- API type being used (openai/anthropic)
+- Available model preference order
+- Model successfully used for the test
+- Response length statistics
+- Preview of raw LLM response
+- Overall test status
 
 ## 🛠️ Implementation Notes
 
@@ -259,6 +267,7 @@ fi
 ```
 
 ## 🔁 Changelog
+  - 0.5.3 — Enhanced --test-llm command with verbose output including API type, model preference, response statistics, and raw response preview
   - 0.5.2 — Added debugging workflow, null value handling, and LLM integration testing procedures
   - 0.5.1 — Added requirement for root file when using diff mode to provide complete validation context
   - 0.5.0 — Added implementation guidance for JSON escaping, markdown stripping, API-model compatibility, and relative path resolution
