@@ -1,3 +1,20 @@
+---
+id: spec-validator
+title: Spec Validator Specification
+version: 0.4.0
+status: active
+entry_points:
+  - bin/spec-validator
+  - Used as reference by spec validation tools
+  - Imported by CLI and API validation endpoints
+description: >
+  Defines the core behavior and expectations for a Spec Validator Agent. The validator operates generically, with no assumptions about specific repositories or directory structures. It inspects individual specification documents and determines whether they conform to the expected standards for structured, executable intent.
+
+# deprecated_at: null
+# replaced_by: null
+
+---
+
 # Spec Validator Specification
 
 This document defines the core behavior and expectations for a **Spec Validator Agent**. The validator operates generically, with no assumptions about specific repositories or directory structures. It inspects individual specification documents and determines whether they conform to the expected standards for structured, executable intent.
@@ -78,12 +95,14 @@ Optional but strongly recommended:
 - Include a `success_criteria` section defining input/output behaviors
 - Include `example_prompts`, if used with AI systems
 - Include `risk_notes` for ambiguous or unstable clauses
+- Include a `test_strategy` section for ensuring testability and coverage
 
 Validator SHOULD warn:
 
 - If no success criteria are defined
 - If intent is vague, circular, or undefined
 - If examples contradict success criteria
+- If no test strategy is outlined
 
 Validator SHOULD emit **structured feedback**:
 
@@ -149,16 +168,42 @@ This format strikes a balance between human readability and machine verifiabilit
 
 ---
 
-## 🧾 Changelog
+## ✅ Success Criteria
 
-- **0.1.0** — Initial spec draft
-- **0.2.0** — Added recommended spec format
-- **0.3.0** — Introduced structured feedback and intent ambiguity warnings
-- **0.4.0** — Clarified validator role as spec linter for agents; added changelog section explicitly
+- Validator correctly identifies all required fields in spec documents
+- Validator produces structured output suitable for both human and machine consumption
+- Validation rules are consistently applied across all spec types
+- False positives are minimized through contextual understanding
+- Validator can process both individual files and batches efficiently
+
+---
+
+## 🧪 Test Strategy
+
+### Unit Tests
+- Schema validation for all required fields
+- Version format checking
+- Changelog parsing and validation
+- Status lifecycle enforcement
+
+### Integration Tests
+- End-to-end validation of sample specs
+- Error message formatting and clarity
+- Batch processing performance
+- Output format consistency
+
+### Test Coverage Targets
+- 100% coverage of validation rules
+- Edge cases for malformed inputs
+- Performance benchmarks for large spec collections
+
+---
+
+## 🔁 Changelog
+
+- **0.4.0** — 2025-01-15 — Clarified validator role as spec linter for agents; added changelog section explicitly
+- **0.3.0** — 2025-01-10 — Introduced structured feedback and intent ambiguity warnings
+- **0.2.0** — 2025-01-05 — Added recommended spec format
+- **0.1.0** — 2024-12-20 — Initial spec draft
 
 > This meta-spec is itself versioned and must conform to the rules above.
-
-`id`: spec-validator\
-`version`: 0.4.0\
-`status`: draft
-
