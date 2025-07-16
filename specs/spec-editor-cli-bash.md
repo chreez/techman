@@ -1,6 +1,6 @@
 ---
 id: spec-editor-cli-bash
-version: 0.1.1
+version: 0.2.0
 title: Spec Editor CLI (Bash)
 status: active
 entry_points:
@@ -24,14 +24,20 @@ Enable assisted spec creation and editing through a CLI that ensures all specs m
 ## ⚙️ Functionality
   - Creates new spec files from:
     - Interactive prompts
-    - Natural language descriptions
+    - Natural language descriptions with AI field generation
     - Templates
     - Existing specs (fork/copy)
   - Updates existing specs:
     - Automatic version bumping based on change type
     - Changelog entry generation
-    - Structure preservation
+    - Structure preservation  
     - Field validation during edits
+    - AI-assisted content updates via --ai-prompt
+  - AI Integration (non-interactive mode):
+    - Automatically generates description from title/prompt
+    - Intelligently creates entry_points based on spec type
+    - Populates all required fields to pass validation
+    - Falls back to sensible defaults if AI fails
   - Detects and uses one of:
     - OPENAI_API_KEY
     - ANTHROPIC_API_KEY
@@ -43,7 +49,9 @@ Enable assisted spec creation and editing through a CLI that ensures all specs m
   - Validates edits before saving (using spec-validator internally)
 
 ## ✅ Success Criteria
-  • Creates valid specs that pass spec-validator checks
+  • Creates valid specs that pass spec-validator checks on first attempt
+  • AI-assisted creation in non-interactive mode produces complete, valid specs
+  • All required fields (description, entry_points) are populated when using --ai-assist
   • Preserves existing content when updating specs
   • Correctly increments version numbers based on change severity
   • Generates meaningful changelog entries
@@ -51,6 +59,7 @@ Enable assisted spec creation and editing through a CLI that ensures all specs m
   • Batch mode processes multiple files efficiently
   • Never overwrites files without confirmation or backup
   • Maintains consistent formatting across all sections
+  • Update command with --ai-prompt applies targeted content changes
   • Agent can use tool to programmatically create/update specs:
 
 ```bash
@@ -129,6 +138,9 @@ Updated successfully!
 # Update with auto-version
 ./bin/spec-editor update --patch --changelog="Fixed typo in description" my-spec.md
 
+# Update with AI-assisted content modification
+./bin/spec-editor update --minor --ai-prompt="Add support for webhook notifications" my-spec.md
+
 # Fork existing spec
 ./bin/spec-editor fork existing-spec.md new-feature-spec.md --id=new-feature
 
@@ -187,12 +199,26 @@ ANTHROPIC_API_KEY=your-key ./bin/spec-editor update --ai-changelog my-spec.md
 
 ## 🛠️ Implementation Notes
 
-### Known Limitations (v0.1.1)
-- The `update` command does not currently support `--ai-prompt` option for AI-assisted content updates
-- AI assistance for updates is limited to `--ai-changelog` for generating changelog entries
-- Workaround: Use `--ai-assist` flag without specific prompt for general AI enhancement during updates
+### AI Integration Requirements (v0.2.0)
+- **Create Mode**: When `--ai-assist` is used with `--no-interactive`:
+  - Must generate description from the provided title/prompt
+  - Must create appropriate entry_points (e.g., "bin/tool-name" for CLIs)
+  - Must populate all required frontmatter fields
+  - Should generate initial content sections based on spec type
+- **Update Mode**: 
+  - Supports `--ai-prompt` for targeted content modifications
+  - Parses the prompt to understand requested changes
+  - Updates relevant sections while preserving structure
+  - Automatically generates appropriate changelog entry
 
 ## 🔁 Changelog
+
+### 0.2.0 - 2025-07-16  
+- Enhanced AI integration requirements for non-interactive mode
+- Added requirement for automatic field population with --ai-assist
+- Specified --ai-prompt support for update command
+- Improved success criteria for first-attempt validation
+- Removed limitations section, replaced with clear requirements
 
 ### 0.1.1 - 2025-07-16
 - Documented known limitation: AI assistance for update command is limited

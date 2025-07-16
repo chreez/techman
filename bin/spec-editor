@@ -14,6 +14,7 @@ VALIDATE=true
 NO_BACKUP=false
 VERSION_BUMP=""
 CHANGELOG_MESSAGE=""
+AI_CHANGELOG=false
 FORK_SOURCE=""
 NEW_ID=""
 NEW_TITLE=""
@@ -25,6 +26,14 @@ VERSION_REGEX="^[0-9]+\.[0-9]+\.[0-9]+$"
 
 # Model preference based on spec-validator
 MODEL_PREFERENCE=("claude-3-5-sonnet-20241022" "gpt-4o-2024-08-06" "gpt-4-turbo-2024-04-09")
+
+# Check for API keys
+API_TYPE=""
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    API_TYPE="anthropic"
+elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
+    API_TYPE="openai"
+fi
 
 usage() {
     cat << 'EOF'
@@ -51,6 +60,7 @@ UPDATE OPTIONS:
     --major             Major version bump (X.0.0)
     --changelog=MSG     Changelog message
     --ai-changelog      Generate changelog with AI
+    --ai-prompt=TEXT    AI-assisted content update
     --no-backup         Don't create backup file
 
 FORK OPTIONS:
@@ -79,6 +89,9 @@ EXAMPLES:
     # Update with patch version
     spec-editor update --patch --changelog="Fixed typos" my-spec.md
 
+    # Update with AI-assisted content modification
+    spec-editor update --minor --ai-prompt="Add support for webhook notifications" my-spec.md
+
     # Fork existing spec
     spec-editor fork base-spec.md new-spec.md --id=new-feature
 
@@ -100,35 +113,28 @@ debug() {
 }
 
 # Parse command line arguments
-if [[ $# -eq 0 ]]; then
-    usage
-fi
-
-# Parse command first
-case "$1" in
-    create|update|fork)
-        COMMAND="$1"
-        shift
-        ;;
-    --test-ai)
-        TEST_AI=true
-        shift
-        if [[ $# -gt 0 ]]; then
-            AI_PROMPT="$1"
-            shift
-        fi
-        ;;
-    -h|--help)
-        usage
-        ;;
-    *)
-        error "Unknown command: $1. Use -h for help."
-        ;;
-esac
-
-# Parse remaining options
 while [[ $# -gt 0 ]]; do
-    case $1 in
+    case "$1" in
+        create|update|fork)
+            COMMAND="$1"
+            shift
+            ;;
+        --test-ai)
+            TEST_AI=true
+            AI_PROMPT="${2:-test prompt}"
+            shift 2 || shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        --debug)
+            DEBUG=1
+            shift
+            ;;
+        --no-interactive)
+            INTERACTIVE=false
+            shift
+            ;;
         --template=*)
             TEMPLATE="${1#*=}"
             shift
@@ -144,6 +150,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --stdin)
             USE_STDIN=true
+            AI_ASSIST=true
             shift
             ;;
         --id=*)
@@ -175,166 +182,94 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --ai-changelog)
-            AI_ASSIST=true
+            AI_CHANGELOG=true
             shift
             ;;
         --no-backup)
             NO_BACKUP=true
             shift
             ;;
-        --no-interactive)
-            INTERACTIVE=false
-            shift
-            ;;
         --modify)
-            # For fork command
+            # Fork option
             shift
-            ;;
-        --debug)
-            DEBUG=1
-            shift
-            ;;
-        -h|--help)
-            usage
             ;;
         -*)
-            error "Unknown option: $1"
+            error "Unknown option: $1. Use -h for help."
             ;;
         *)
-            if [[ "$COMMAND" == "fork" ]] && [[ -z "$FORK_SOURCE" ]]; then
-                FORK_SOURCE="$1"
-            else
+            if [[ -z "$SPEC_FILE" ]]; then
                 SPEC_FILE="$1"
+            elif [[ "$COMMAND" == "fork" && -z "$FORK_SOURCE" ]]; then
+                FORK_SOURCE="$SPEC_FILE"
+                SPEC_FILE="$1"
+            else
+                error "Unexpected argument: $1"
             fi
             shift
             ;;
     esac
 done
 
-# Check for API keys
-API_TYPE=""
-API_KEY=""
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-    API_TYPE="anthropic"
-    API_KEY="$ANTHROPIC_API_KEY"
-elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
-    API_TYPE="openai"
-    API_KEY="$OPENAI_API_KEY"
-else
-    error "Either ANTHROPIC_API_KEY or OPENAI_API_KEY must be set"
+# Validate API key availability
+if [[ -z "$API_TYPE" ]]; then
+    error "Either ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable must be set"
 fi
-
-debug "API Type: $API_TYPE"
-
-# Create a temporary directory (working directory, not system /tmp)
-TMP_DIR="./tmp_spec_editor_$$"
-mkdir -p "$TMP_DIR"
-trap "rm -rf $TMP_DIR" EXIT
-
-# Read the reference spec validator spec
-SPEC_VALIDATOR_SPEC_PATH="$(dirname "$0")/../specs/spec-validator.md"
-if [[ ! -f "$SPEC_VALIDATOR_SPEC_PATH" ]]; then
-    error "Reference spec validator specification not found at: $SPEC_VALIDATOR_SPEC_PATH"
-fi
-SPEC_VALIDATOR_SPEC=$(cat "$SPEC_VALIDATOR_SPEC_PATH")
-
-# Function to call OpenAI API
-call_openai() {
-    local model="$1"
-    local prompt="$2"
-    local system_message="$3"
-    debug "Calling OpenAI API with model: $model"
-    
-    # Escape the prompt content using jq
-    local escaped_prompt
-    escaped_prompt=$(echo "$prompt" | jq -Rs .)
-    
-    # Create the request JSON
-    cat > "$TMP_DIR/request.json" <<EOF
-{
-  "model": "$model",
-  "messages": [
-    {
-      "role": "system",
-      "content": "$system_message"
-    },
-    {
-      "role": "user",
-      "content": $escaped_prompt
-    }
-  ],
-  "temperature": 0.3
-}
-EOF
-    
-    local response
-    response=$(curl -s -X POST https://api.openai.com/v1/chat/completions \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $API_KEY" \
-        -d @"$TMP_DIR/request.json")
-    
-    debug "OpenAI response received"
-    
-    # Check for errors
-    if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
-        debug "OpenAI API error: $(echo "$response" | jq -r '.error.message')"
-        return 1
-    fi
-    
-    # Extract the content
-    local content
-    content=$(echo "$response" | jq -r '.choices[0].message.content // empty')
-    if [[ -z "$content" ]]; then
-        debug "Empty content from OpenAI response"
-        return 1
-    fi
-    echo "$content"
-}
 
 # Function to call Anthropic API
 call_anthropic() {
     local model="$1"
     local prompt="$2"
     local system_message="$3"
-    debug "Calling Anthropic API with model: $model"
     
-    # Escape the prompt content using jq
-    local escaped_prompt
-    escaped_prompt=$(echo "$system_message
-
-$prompt" | jq -Rs .)
+    # Create JSON payload using jq
+    local json_payload=$(jq -n \
+        --arg model "$model" \
+        --arg prompt "$prompt" \
+        --arg system "$system_message" \
+        '{
+            model: $model,
+            max_tokens: 4096,
+            messages: [{role: "user", content: $prompt}],
+            system: $system
+        }')
     
-    # Create the request JSON
-    cat > "$TMP_DIR/request.json" <<EOF
-{
-  "model": "$model",
-  "max_tokens": 4096,
-  "messages": [
-    {
-      "role": "user",
-      "content": $escaped_prompt
-    }
-  ]
-}
-EOF
-    
-    local response
-    response=$(curl -s -X POST https://api.anthropic.com/v1/messages \
+    local response=$(curl -s https://api.anthropic.com/v1/messages \
         -H "Content-Type: application/json" \
-        -H "x-api-key: $API_KEY" \
+        -H "x-api-key: $ANTHROPIC_API_KEY" \
         -H "anthropic-version: 2023-06-01" \
-        -d @"$TMP_DIR/request.json")
-    
-    debug "Anthropic response received"
-    
-    # Check for errors
-    if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
-        debug "Anthropic API error: $(echo "$response" | jq -r '.error.message')"
-        return 1
-    fi
+        -d "$json_payload")
     
     # Extract the content
     echo "$response" | jq -r '.content[0].text // empty'
+}
+
+# Function to call OpenAI API
+call_openai() {
+    local model="$1"
+    local prompt="$2"
+    local system_message="$3"
+    
+    # Create JSON payload using jq
+    local json_payload=$(jq -n \
+        --arg model "$model" \
+        --arg prompt "$prompt" \
+        --arg system "$system_message" \
+        '{
+            model: $model,
+            messages: [
+                {role: "system", content: $system},
+                {role: "user", content: $prompt}
+            ],
+            max_tokens: 4096
+        }')
+    
+    local response=$(curl -s https://api.openai.com/v1/chat/completions \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $OPENAI_API_KEY" \
+        -d "$json_payload")
+    
+    # Extract the content
+    echo "$response" | jq -r '.choices[0].message.content // empty'
 }
 
 # Function to call LLM with model preference
@@ -360,42 +295,10 @@ call_llm() {
                 return 0
             fi
         fi
-        debug "Model $model failed or incompatible with API type $API_TYPE"
     done
     
-    error "Failed to get response from any compatible model"
-}
-
-# Function to validate spec using spec-validator
-validate_spec() {
-    local spec_file="$1"
-    local validator_path="$(dirname "$0")/spec-validator"
-    
-    if [[ ! -f "$validator_path" ]]; then
-        debug "Spec validator not found, skipping validation"
-        return 0
-    fi
-    
-    debug "Validating spec: $spec_file"
-    if "$validator_path" "$spec_file" >/dev/null 2>&1; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Function to create backup
-create_backup() {
-    local file="$1"
-    if [[ "$NO_BACKUP" == "true" ]]; then
-        return 0
-    fi
-    
-    if [[ -f "$file" ]]; then
-        local backup_file="${file}.bak"
-        cp "$file" "$backup_file"
-        debug "Backup created: $backup_file"
-    fi
+    debug "All models failed"
+    return 1
 }
 
 # Function to prompt for input with default
@@ -418,32 +321,35 @@ prompt_input() {
     echo "$result"
 }
 
-# Function to get current timestamp
+# Function to get timestamp
 get_timestamp() {
-    date '+%Y-%m-%d'
+    date -u +%Y-%m-%d
 }
 
 # Function to increment version
 increment_version() {
-    local current_version="$1"
+    local version="$1"
     local bump_type="$2"
     
-    if [[ ! "$current_version" =~ $VERSION_REGEX ]]; then
-        error "Invalid version format: $current_version"
+    # Parse version
+    if [[ ! "$version" =~ $VERSION_REGEX ]]; then
+        error "Invalid version format: $version"
     fi
     
-    IFS='.' read -r major minor patch <<< "$current_version"
+    local major=$(echo "$version" | cut -d. -f1)
+    local minor=$(echo "$version" | cut -d. -f2)
+    local patch=$(echo "$version" | cut -d. -f3)
     
     case "$bump_type" in
         patch)
-            ((patch++))
+            patch=$((patch + 1))
             ;;
         minor)
-            ((minor++))
+            minor=$((minor + 1))
             patch=0
             ;;
         major)
-            ((major++))
+            major=$((major + 1))
             minor=0
             patch=0
             ;;
@@ -460,25 +366,176 @@ parse_frontmatter() {
     local file="$1"
     local field="$2"
     
-    if [[ ! -f "$file" ]]; then
-        return 1
-    fi
-    
-    # Extract frontmatter between --- lines and get specific field
-    awk '/^---$/ {flag=!flag; next} flag && /^'"$field"':/ {sub(/^'"$field"': */, ""); print; exit}' "$file"
+    # Extract frontmatter and get field value
+    awk -v field="$field" '
+        /^---$/ { if (++count == 2) exit }
+        count == 1 && $1 == field":" { 
+            sub(/^[^:]+:[ ]*/, "")
+            print
+            exit
+        }
+    ' "$file"
 }
 
-# Function to generate spec template
-generate_spec_template() {
-    local spec_id="$1"
-    local title="$2"
-    local version="$3"
-    local description="$4"
-    local entry_points="$5"
-    local status="${6:-draft}"
+# Function to validate spec using spec-validator
+validate_spec() {
+    local spec_file="$1"
+    local validator_path=""
     
-    cat << EOF
----
+    # Find spec-validator
+    if [[ -x "./bin/spec-validator" ]]; then
+        validator_path="./bin/spec-validator"
+    elif [[ -x "$(dirname "$0")/spec-validator" ]]; then
+        validator_path="$(dirname "$0")/spec-validator"
+    else
+        debug "spec-validator not found, skipping validation"
+        return 0
+    fi
+    
+    # Run validation
+    if "$validator_path" "$spec_file" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to create backup
+create_backup() {
+    local file="$1"
+    if [[ "$NO_BACKUP" == "false" ]] && [[ -f "$file" ]]; then
+        cp "$file" "${file}.bak"
+        debug "Created backup: ${file}.bak"
+    fi
+}
+
+# Function to generate AI content for required fields
+generate_ai_fields() {
+    local title="$1"
+    local spec_id="$2"
+    local prompt="${3:-$title}"
+    
+    # Generate description
+    local desc_prompt="Generate a concise 1-2 sentence description for a specification about: $prompt. Focus on the core functionality and purpose. Output only the description text, no quotes or extra formatting."
+    local description=$(call_llm "$desc_prompt" "You are a technical specification writer.")
+    
+    # Generate entry points based on the spec type
+    local entry_prompt="For a specification titled '$title' with ID '$spec_id', generate appropriate entry_points. If it's a CLI tool, use 'bin/$spec_id'. If it's a library, use 'src/$spec_id' or 'lib/$spec_id'. If it's a service, use 'services/$spec_id'. Output only the entry point path, no quotes or extra formatting."
+    local entry_points=$(call_llm "$entry_prompt" "You are a technical specification writer.")
+    
+    # Return as JSON-like structure for easy parsing
+    cat <<EOF
+{
+  "description": "$description",
+  "entry_points": "$entry_points"
+}
+EOF
+}
+
+# Handle test AI command
+if [[ "$TEST_AI" == "true" ]]; then
+    echo "[SPEC EDITOR] Testing AI integration"
+    echo "API Type: $API_TYPE"
+    echo "Test prompt: $AI_PROMPT"
+    echo
+    
+    system_msg="You are a helpful assistant. Generate a brief 2-3 sentence description of a software specification for: $AI_PROMPT"
+    
+    echo "Testing AI response..."
+    result=$(call_llm "$AI_PROMPT" "$system_msg")
+    
+    echo "Status: SUCCESS"
+    echo "Response Length: $(echo "$result" | wc -c) characters"
+    echo
+    echo "AI Response:"
+    echo "------------"
+    echo "$result"
+    echo "------------"
+    exit 0
+fi
+
+# Handle create command
+if [[ "$COMMAND" == "create" ]]; then
+    if [[ -z "$SPEC_FILE" ]]; then
+        error "Spec file path is required for create command"
+    fi
+    
+    if [[ -f "$SPEC_FILE" ]]; then
+        error "File already exists: $SPEC_FILE"
+    fi
+    
+    echo "[SPEC EDITOR] Creating new spec: $SPEC_FILE"
+    echo
+    
+    # Get input description if using stdin
+    if [[ "$USE_STDIN" == "true" ]]; then
+        AI_PROMPT=$(cat)
+    fi
+    
+    # Collect spec information
+    if [[ -n "$NEW_ID" ]]; then
+        spec_id="$NEW_ID"
+    else
+        spec_id=$(prompt_input "Enter spec ID (lowercase-hyphenated)" "$(basename "$SPEC_FILE" .md)")
+    fi
+    
+    if [[ -n "$NEW_TITLE" ]]; then
+        title="$NEW_TITLE"
+    else
+        title=$(prompt_input "Enter title" "")
+    fi
+    
+    version=$(prompt_input "Enter initial version" "0.1.0")
+    
+    # Generate AI fields if in non-interactive mode with AI assist
+    if [[ "$INTERACTIVE" == "false" ]] && [[ "$AI_ASSIST" == "true" ]]; then
+        debug "Generating AI content for required fields"
+        ai_fields=$(generate_ai_fields "$title" "$spec_id" "$AI_PROMPT")
+        description=$(echo "$ai_fields" | jq -r '.description // empty')
+        entry_points=$(echo "$ai_fields" | jq -r '.entry_points // empty')
+        
+        # Fallback to defaults if AI fails
+        if [[ -z "$description" ]]; then
+            description="Specification for $title"
+        fi
+        if [[ -z "$entry_points" ]]; then
+            entry_points="bin/$spec_id"
+        fi
+        
+        status="draft"
+    else
+        # Interactive mode or manual mode
+        if [[ "$AI_ASSIST" == "true" ]] && [[ -n "$AI_PROMPT" ]]; then
+            echo "Generating description with AI..."
+            ai_system="You are a technical specification writer. Generate a concise description (1-2 sentences) for a specification about: $AI_PROMPT. Focus on the core functionality and purpose."
+            description=$(call_llm "$AI_PROMPT" "$ai_system")
+        else
+            description=$(prompt_input "Enter description" "")
+        fi
+        
+        entry_points=$(prompt_input "Enter entry points (comma-separated)" "")
+        
+        if [[ "$INTERACTIVE" == "true" ]]; then
+            echo
+            echo "Select status:"
+            echo "1) draft (new/experimental)"
+            echo "2) active (in production)"
+            echo "3) deprecated (being phased out)"
+            status_choice=$(prompt_input "Choice" "1")
+            
+            case "$status_choice" in
+                1) status="draft" ;;
+                2) status="active" ;;
+                3) status="deprecated" ;;
+                *) status="draft" ;;
+            esac
+        else
+            status="draft"
+        fi
+    fi
+    
+    # Create initial spec content
+    spec_content="---
 id: $spec_id
 version: $version
 title: $title
@@ -520,117 +577,27 @@ description: >
 ## 🔁 Changelog
 
 - **$version** — $(get_timestamp) — Initial specification
-EOF
-}
+"
 
-# Handle test AI mode
-if [[ "$TEST_AI" == "true" ]]; then
-    echo "=== AI Integration Test ==="
-    echo "API Type: $API_TYPE"
-    echo "Available Models: ${MODEL_PREFERENCE[*]}"
-    
-    test_prompt="${AI_PROMPT:-A simple user authentication system}"
-    echo "Test Prompt: $test_prompt"
-    echo
-    
-    system_msg="You are a helpful assistant. Generate a brief 2-3 sentence description of a software specification for: $test_prompt"
-    
-    echo "Testing AI response..."
-    result=$(call_llm "$test_prompt" "$system_msg")
-    
-    echo "Status: SUCCESS"
-    echo "Response Length: $(echo "$result" | wc -c) characters"
-    echo
-    echo "AI Response:"
-    echo "------------"
-    echo "$result"
-    echo "------------"
-    exit 0
-fi
-
-# Handle create command
-if [[ "$COMMAND" == "create" ]]; then
-    if [[ -z "$SPEC_FILE" ]]; then
-        error "Spec file path is required for create command"
-    fi
-    
-    if [[ -f "$SPEC_FILE" ]]; then
-        error "File already exists: $SPEC_FILE"
-    fi
-    
-    echo "[SPEC EDITOR] Creating new spec: $SPEC_FILE"
-    echo
-    
-    # Get input description if using stdin
-    if [[ "$USE_STDIN" == "true" ]]; then
-        AI_PROMPT=$(cat)
-        AI_ASSIST=true
-    fi
-    
-    # Collect spec information
-    if [[ -n "$NEW_ID" ]]; then
-        spec_id="$NEW_ID"
-    else
-        spec_id=$(prompt_input "Enter spec ID (lowercase-hyphenated)" "$(basename "$SPEC_FILE" .md)")
-    fi
-    
-    if [[ -n "$NEW_TITLE" ]]; then
-        title="$NEW_TITLE"
-    else
-        title=$(prompt_input "Enter title" "")
-    fi
-    
-    version=$(prompt_input "Enter initial version" "0.1.0")
-    
-    # AI-enhanced description if requested
+    # AI enhancement if requested
     if [[ "$AI_ASSIST" == "true" ]] && [[ -n "$AI_PROMPT" ]]; then
-        echo "Generating description with AI..."
-        ai_system="You are a technical specification writer. Generate a concise description (1-2 sentences) for a specification about: $AI_PROMPT. Focus on the core functionality and purpose."
-        description=$(call_llm "$AI_PROMPT" "$ai_system")
-    else
-        description=$(prompt_input "Enter description" "")
-    fi
-    
-    entry_points=$(prompt_input "Enter entry points (comma-separated)" "")
-    
-    if [[ "$INTERACTIVE" == "true" ]]; then
-        echo
-        echo "Select status:"
-        echo "1) draft (new/experimental)"
-        echo "2) active (in production)"
-        echo "3) deprecated (being phased out)"
-        status_choice=$(prompt_input "Choice" "1")
+        echo "Enhancing spec with AI..."
         
-        case "$status_choice" in
-            1) status="draft" ;;
-            2) status="active" ;;
-            3) status="deprecated" ;;
-            *) status="draft" ;;
-        esac
-    else
-        status="draft"
-    fi
-    
-    # Generate the spec content
-    spec_content=$(generate_spec_template "$spec_id" "$title" "$version" "$description" "$entry_points" "$status")
-    
-    # Enhance with AI if requested
-    if [[ "$AI_ASSIST" == "true" ]] && [[ -n "$AI_PROMPT" ]]; then
-        echo "Enhancing spec content with AI..."
-        
-        ai_enhance_prompt="Based on this description: '$AI_PROMPT'
+        # Create a more detailed prompt for full spec generation
+        ai_enhance_prompt="Given this spec template for '$title':
 
-Please enhance this specification template by filling in the placeholder sections with relevant content. Keep the structure and formatting intact, but replace the bracketed placeholder text with specific, relevant content.
-
-Template to enhance:
 $spec_content
 
-Focus on:
-- Goal section: Clear objective
-- Functionality: Key features
+Please enhance this specification with detailed, relevant content based on the description: $AI_PROMPT
+
+Requirements:
+- Keep the exact same structure and section headers
+- Replace placeholder text in brackets with actual content
+- Write specific, actionable content for each section
+- Goal: Clear statement of what this spec aims to achieve
+- Functionality: Detailed list of features and capabilities
 - Success Criteria: Measurable outcomes
 - Test Strategy: Appropriate testing approach
-
 Respond with the complete enhanced specification document."
         
         enhanced_content=$(call_llm "$ai_enhance_prompt" "You are a technical specification writer. Enhance the provided template with relevant, specific content while maintaining the exact structure and formatting.")
@@ -653,9 +620,6 @@ Respond with the complete enhanced specification document."
     else
         echo "Spec created successfully!"
     fi
-    
-    echo "File: $SPEC_FILE"
-    exit 0
 fi
 
 # Handle update command
@@ -704,55 +668,91 @@ if [[ "$COMMAND" == "update" ]]; then
     new_version=$(increment_version "$current_version" "$VERSION_BUMP")
     echo "New version: $new_version"
     
-    # Get changelog message
-    if [[ -z "$CHANGELOG_MESSAGE" ]]; then
-        CHANGELOG_MESSAGE=$(prompt_input "Describe your change for the changelog" "")
+    # Handle AI-assisted content update
+    if [[ "$AI_ASSIST" == "true" ]] && [[ -n "$AI_PROMPT" ]]; then
+        echo "Applying AI-assisted content update..."
+        
+        # Read current spec content
+        current_content=$(cat "$SPEC_FILE")
+        
+        # Create update prompt
+        update_prompt="Given this specification document:
+
+$current_content
+
+Apply the following change: $AI_PROMPT
+
+Requirements:
+- Maintain the exact structure and formatting
+- Update relevant sections based on the requested change
+- Preserve all existing content that isn't directly affected
+- Add new content where appropriate
+- Do not modify the frontmatter (YAML between ---) except for version
+- Ensure the document remains valid according to spec format
+
+Respond with the complete updated specification document."
+
+        # Get AI response
+        updated_content=$(call_llm "$update_prompt" "You are a technical specification editor. Update the provided specification based on the requested changes while preserving structure and existing content.")
+        
+        if [[ -n "$updated_content" ]]; then
+            # Save the AI-updated content
+            echo "$updated_content" > "$SPEC_FILE"
+            
+            # Update version in the file
+            sed -i.tmp "s/^version: .*/version: $new_version/" "$SPEC_FILE"
+            rm -f "${SPEC_FILE}.tmp"
+            
+            # Generate changelog message if not provided
+            if [[ -z "$CHANGELOG_MESSAGE" ]]; then
+                CHANGELOG_MESSAGE="$AI_PROMPT"
+            fi
+        else
+            error "AI content update failed"
+        fi
+    else
+        # Manual update - just update version
+        sed -i.tmp "s/^version: .*/version: $new_version/" "$SPEC_FILE"
+        rm -f "${SPEC_FILE}.tmp"
     fi
     
-    # Update version in file
-    sed -i.tmp "s/^version: .*/version: $new_version/" "$SPEC_FILE"
-    rm -f "${SPEC_FILE}.tmp"
+    # Get changelog message
+    if [[ -z "$CHANGELOG_MESSAGE" ]] && [[ "$AI_CHANGELOG" == "true" ]]; then
+        echo "Generating changelog with AI..."
+        # Read git diff if available
+        if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+            diff_content=$(git diff "$SPEC_FILE" 2>/dev/null || echo "")
+            changelog_prompt="Based on these changes, write a brief changelog entry: $diff_content"
+        else
+            changelog_prompt="Write a brief changelog entry for a $VERSION_BUMP version update"
+        fi
+        
+        CHANGELOG_MESSAGE=$(call_llm "$changelog_prompt" "You are a technical writer. Generate a concise, clear changelog entry.")
+    elif [[ -z "$CHANGELOG_MESSAGE" ]]; then
+        CHANGELOG_MESSAGE=$(prompt_input "Describe your change for the changelog" "")
+    fi
     
     # Add changelog entry
     timestamp=$(get_timestamp)
     new_changelog_entry="- **$new_version** — $timestamp — $CHANGELOG_MESSAGE"
     
-    # Find and update changelog section
-    if grep -q "## 🔁 Changelog" "$SPEC_FILE"; then
-        # Insert after changelog header
-        awk -v new_entry="$new_changelog_entry" '
-            /^## 🔁 Changelog/ {
-                print
-                print ""
-                print new_entry
-                next
-            }
-            {print}
-        ' "$SPEC_FILE" > "$TMP_DIR/updated_spec.md"
-        mv "$TMP_DIR/updated_spec.md" "$SPEC_FILE"
-    else
-        # Add changelog section at the end
-        echo "" >> "$SPEC_FILE"
-        echo "## 🔁 Changelog" >> "$SPEC_FILE"
-        echo "" >> "$SPEC_FILE"
-        echo "$new_changelog_entry" >> "$SPEC_FILE"
-    fi
+    # Find changelog section and add entry
+    awk -v entry="$new_changelog_entry" '
+        /^## 🔁 Changelog/ || /^## Changelog/ { 
+            print
+            print ""
+            print entry
+            next
+        }
+        { print }
+    ' "$SPEC_FILE" > "${SPEC_FILE}.tmp" && mv "${SPEC_FILE}.tmp" "$SPEC_FILE"
     
     echo
     echo "Summary of changes:"
     echo "- Version: $current_version → $new_version"
     echo "- New changelog entry"
-    
-    if [[ "$INTERACTIVE" == "true" ]]; then
-        confirm=$(prompt_input "Confirm update? [y/N]" "n")
-        if [[ "$confirm" != "y" ]] && [[ "$confirm" != "Y" ]]; then
-            # Restore from backup
-            if [[ -f "${SPEC_FILE}.bak" ]]; then
-                mv "${SPEC_FILE}.bak" "$SPEC_FILE"
-            fi
-            echo "Update cancelled."
-            exit 0
-        fi
+    if [[ "$AI_ASSIST" == "true" ]] && [[ -n "$AI_PROMPT" ]]; then
+        echo "- AI-assisted content update applied"
     fi
     
     # Validate if requested
@@ -760,84 +760,66 @@ if [[ "$COMMAND" == "update" ]]; then
         if validate_spec "$SPEC_FILE"; then
             echo "Updated successfully! Validation passed."
         else
-            echo "Warning: Update completed but validation failed. Run 'spec-validator $SPEC_FILE' to see issues."
+            echo "Warning: Updated but validation failed. Run 'spec-validator $SPEC_FILE' to see issues."
         fi
     else
         echo "Updated successfully!"
     fi
-    
-    exit 0
 fi
 
 # Handle fork command
 if [[ "$COMMAND" == "fork" ]]; then
     if [[ -z "$FORK_SOURCE" ]] || [[ -z "$SPEC_FILE" ]]; then
-        error "Both source and target files required for fork command"
+        error "Fork requires source and destination files: spec-editor fork <source> <destination>"
     fi
     
     if [[ ! -f "$FORK_SOURCE" ]]; then
-        error "Source spec file not found: $FORK_SOURCE"
+        error "Source spec not found: $FORK_SOURCE"
     fi
     
     if [[ -f "$SPEC_FILE" ]]; then
-        error "Target file already exists: $SPEC_FILE"
+        error "Destination already exists: $SPEC_FILE"
     fi
     
     echo "[SPEC EDITOR] Forking: $FORK_SOURCE → $SPEC_FILE"
     
-    # Copy source file
+    # Copy the source file
     cp "$FORK_SOURCE" "$SPEC_FILE"
     
-    # Update ID and title if specified
+    # Update ID and title
     if [[ -n "$NEW_ID" ]]; then
         sed -i.tmp "s/^id: .*/id: $NEW_ID/" "$SPEC_FILE"
-        rm -f "${SPEC_FILE}.tmp"
     fi
     
     if [[ -n "$NEW_TITLE" ]]; then
         sed -i.tmp "s/^title: .*/title: $NEW_TITLE/" "$SPEC_FILE"
-        rm -f "${SPEC_FILE}.tmp"
     fi
     
-    # Reset version to 0.1.0
+    # Reset version
     sed -i.tmp "s/^version: .*/version: 0.1.0/" "$SPEC_FILE"
+    
+    # Update changelog
+    timestamp=$(get_timestamp)
+    new_changelog="## 🔁 Changelog\n\n- **0.1.0** — $timestamp — Forked from $(basename "$FORK_SOURCE")"
+    
+    # Replace changelog section
+    awk -v new_log="$new_changelog" '
+        /^## 🔁 Changelog/ || /^## Changelog/ { 
+            print new_log
+            in_changelog = 1
+            next
+        }
+        /^## / && in_changelog { in_changelog = 0 }
+        !in_changelog { print }
+    ' "$SPEC_FILE" > "${SPEC_FILE}.tmp" && mv "${SPEC_FILE}.tmp" "$SPEC_FILE"
+    
+    # Clean up temp files
     rm -f "${SPEC_FILE}.tmp"
     
-    # Reset changelog
-    timestamp=$(get_timestamp)
-    new_changelog="- **0.1.0** — $timestamp — Forked from $FORK_SOURCE"
-    
-    if grep -q "## 🔁 Changelog" "$SPEC_FILE"; then
-        # Replace changelog section
-        awk -v new_entry="$new_changelog" '
-            /^## 🔁 Changelog/ {
-                print
-                print ""
-                print new_entry
-                in_changelog = 1
-                next
-            }
-            /^## / && in_changelog {
-                in_changelog = 0
-            }
-            !in_changelog {print}
-        ' "$SPEC_FILE" > "$TMP_DIR/forked_spec.md"
-        mv "$TMP_DIR/forked_spec.md" "$SPEC_FILE"
-    fi
-    
     echo "Fork created successfully!"
-    echo "File: $SPEC_FILE"
-    
-    # Validate if requested
-    if [[ "$VALIDATE" == "true" ]]; then
-        if validate_spec "$SPEC_FILE"; then
-            echo "Validation passed."
-        else
-            echo "Warning: Validation failed. Run 'spec-validator $SPEC_FILE' to see issues."
-        fi
-    fi
-    
-    exit 0
 fi
 
-error "Unknown command: $COMMAND"
+# If no command specified
+if [[ -z "$COMMAND" ]] && [[ "$TEST_AI" == "false" ]]; then
+    error "No command specified. Use -h for help."
+fi

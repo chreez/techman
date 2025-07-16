@@ -1,7 +1,7 @@
 ---
 
 id: techman-workflow
-version: 0.5.0
+version: 0.6.0
 title: Techman Agentic Workflow
 description: Cozy, emoji-driven shell agent that creates, validates, and evolves structured specs using AI, Git, and natural prompts
 entry\_points:
@@ -79,10 +79,6 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 
 ## 🛠️ Implementation Notes
 
-### Known Integration Issues
-
-* **spec-editor AI generation**: When creating new specs with `--ai-assist` in non-interactive mode, the AI content generation for `description` and `entry_points` fields may not populate correctly, resulting in empty fields that fail validation. The auto-fix loop attempts to correct this but may require multiple iterations.
-
 ### Atomic Workflow Commit Policy
 
 * Every meaningful change is committed (initial + follow-up)
@@ -112,6 +108,7 @@ No generic \[OK] or \[ERROR] messages — just friendly, expressive logs that re
 
 ## 🔁 Changelog
 
+* **0.6.0** — 2025-07-16 — Fixed spec-editor integration: AI now properly generates all required fields in non-interactive mode
 * **0.5.0** — 2025-07-16 — Introduced `--prompt`, emoji-rich logs, interactive mode, and smart version bumping based on Git + intent
 * **0.3.2** — 2025-07-16 — Auto-fix validation issues: Fixed failures.
 * **0.3.0** — 2025-07-16 — Enabled full AI-assisted fixing, enforced atomic Git commits
