@@ -1,5 +1,4 @@
 ---
-
 id: spec-validator-cli-bash
 version: 0.5.1
 title: Spec Validator CLI (Bash)
@@ -11,6 +10,9 @@ entry_points:
 
 description: >
   Defines a Bash-based CLI tool that validates a spec file against the core spec-validator logic. Designed for lightweight execution using Claude or OpenAI APIs and basic shell utilities.
+
+# deprecated_at: null  # Not deprecated
+# replaced_by: null    # No replacement
 
 ---
 
@@ -134,6 +136,16 @@ or with diff input:
 git diff HEAD^ HEAD -- specs/ | ./bin/spec-validator --diff -
 ```
 
+### Test Coverage
+- Valid spec file validation
+- Invalid spec file detection
+- API key authentication
+- JSON output format
+- Human-readable output format
+- Diff mode validation
+- Error handling for missing files
+- Model fallback behavior
+
 ## 🛠️ Implementation Notes
 
 ### JSON Escaping in Shell
@@ -159,6 +171,37 @@ git diff HEAD^ HEAD -- specs/ | ./bin/spec-validator --diff -
 - When `--diff` is used with a root spec file, combine diff content with original file for complete context
 - This enables validation of changes against the full specification structure
 - Root file provides necessary context for understanding the scope and impact of changes
+
+## 📝 Example Prompts
+
+### Basic Validation
+```bash
+# Validate a single spec file
+./bin/spec-validator specs/my-feature.md
+
+# Get JSON output for automation
+./bin/spec-validator --json specs/my-feature.md > validation-results.json
+```
+
+### Diff-Based Validation
+```bash
+# Validate changes in current git diff
+git diff | ./bin/spec-validator --diff - specs/my-feature.md
+
+# Validate staged changes
+git diff --cached | ./bin/spec-validator --diff - specs/my-feature.md
+```
+
+### Pipeline Integration
+```bash
+# Use in CI/CD pipeline
+if ./bin/spec-validator --json specs/*.md | jq -e '.status == "PASS"'; then
+  echo "All specs valid"
+else
+  echo "Spec validation failed"
+  exit 1
+fi
+```
 
 ## 🔁 Changelog
   - 0.5.1 — Added requirement for root file when using diff mode to provide complete validation context
