@@ -1,6 +1,6 @@
 ---
 id: spec-editor-cli-bash
-version: 0.2.0
+version: 0.3.0
 title: Spec Editor CLI (Bash)
 status: active
 entry_points:
@@ -213,6 +213,15 @@ ANTHROPIC_API_KEY=your-key ./bin/spec-editor update --ai-changelog my-spec.md
 
 ## 🔁 Changelog
 
+- **0.3.0** — 2025-07-16 — AI edit: Document new backup strategy: backups are now stored in .techman/backups/ directory with timestamps, keeping only the last 5 backups per file
+
+### 0.2.1 - 2025-10-25
+- Updated backup strategy: Backups are now stored in .techman/backups/ directory with timestamps, keeping only the last 5 backups per file
+- Implemented enhanced AI integration requirements for non-interactive mode
+- Added requirement for automatic field population with --ai-assist
+- Specified --ai-prompt support for update command
+- Improved success criteria for first-attempt validation
+
 ### 0.2.0 - 2025-07-16  
 - Enhanced AI integration requirements for non-interactive mode
 - Added requirement for automatic field population with --ai-assist
@@ -265,8 +274,8 @@ templates/
 - Always validate AI output before including
 
 ### Backup Strategy
-- Before any update: `cp spec.md spec.md.bak`
-- Maintain last 3 backups with timestamps
+- Before any update: create backup in .techman/backups/ directory with timestamps
+- Maintain last 5 backups per file
 - Option to disable with `--no-backup`
 
 ## 📝 Example Prompts
@@ -312,7 +321,3 @@ find specs/ -name "*.md" | xargs -I {} ./bin/spec-editor update --patch {} --cha
 # Generate from code
 ./bin/spec-editor analyze src/feature.ts --output=feature-spec.md
 ```
-
-## 🔁 Changelog
-
-- **0.1.0** — 2025-07-16 — Claude — Initial spec for spec-editor tool based on spec-validator patterns
