@@ -1,6 +1,6 @@
 ---
 id: techman-workflow
-version: 0.3.1
+version: 0.3.2
 title: Techman Agentic Workflow
 description: Shell-based agent that creates, validates, and auto-fixes structured specs using Techman tools with atomic Git commits
 entry_points:
@@ -63,6 +63,8 @@ Create a deterministic CLI agent that generates and validates structured specs u
 - Fix iteration limit: now allows full AI-assisted fix pass with one loop
 
 ## 🔁 Changelog
+
+- **0.3.2** — 2025-07-16 — Auto-fix validation issues: Fixed failures. 
 
 - **0.3.1** — 2025-07-16 — 
 
